@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Pressable, StyleSheet } from 'react-native';
 import Animated, {
   Easing,
@@ -30,7 +30,11 @@ export function IconButton({
 }: Props) {
   const press = useSharedValue(0);
   const on = useSharedValue(active ? 1 : 0);
-  on.value = withTiming(active ? 1 : 0, { duration: 280, easing: ease });
+  // Phải nằm trong effect: ghi shared value ngay trong thân render là tác dụng
+  // phụ giữa lúc React đang dựng cây, Reanimated cảnh báo đúng.
+  useEffect(() => {
+    on.value = withTiming(active ? 1 : 0, { duration: 280, easing: ease });
+  }, [active, on]);
 
   const style = useAnimatedStyle(() => ({
     transform: [{ scale: 1 - 0.12 * press.value }],

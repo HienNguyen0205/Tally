@@ -1,8 +1,10 @@
-const { boxToScreen } = require('../src/boxLayout');
+const { boxToScreen, toFrameBox } = require('../src/boxLayout');
 
 /**
  * Vùng chạm lệch so với box đã vẽ là lỗi rất khó thấy bằng mắt (bấm hụt vài
  * chục pixel), nên kiểm bằng số ở các mốc đặc trưng.
+ *
+ * boxToScreen nhận box ĐÃ ở hệ frame - chặng letterbox do toFrameBox lo.
  */
 describe('quy box về toạ độ màn hình', () => {
   // Frame dọc 720x1280, màn hình 1080x2460 - đúng cấu hình thật của máy test.
@@ -11,10 +13,7 @@ describe('quy box về toạ độ màn hình', () => {
   const SW = 1080;
   const SH = 2460;
 
-  // Viền đen letterbox mỗi bên trái/phải, quy ra chuẩn hoá.
-  const padX = (FH - FW) / 2 / FH;
-
-  const full = { xmin: padX, ymin: 0, xmax: 1 - padX, ymax: 1 };
+  const full = { xmin: 0, ymin: 0, xmax: 1, ymax: 1 };
 
   it('box phủ trọn khung hình thì phủ trọn chiều cao màn hình', () => {
     const r = boxToScreen(full, FW, FH, SW, SH);
@@ -34,8 +33,9 @@ describe('quy box về toạ độ màn hình', () => {
   });
 
   it('giữ đúng tỉ lệ: box vuông trong frame ra hình vuông trên màn', () => {
-    const half = { xmin: 0.3, ymin: 0.3, xmax: 0.5, ymax: 0.5 };
-    const r = boxToScreen(half, FW, FH, SW, SH);
+    // Vuông trong hệ frame = bề rộng chuẩn hoá phải nhỏ hơn bề cao đúng tỉ lệ.
+    const square = { xmin: 0.3, ymin: 0.3, xmax: 0.5, ymax: 0.3 + 0.2 * (FW / FH) };
+    const r = boxToScreen(square, FW, FH, SW, SH);
     expect(r.width).toBeCloseTo(r.height, 5);
   });
 
@@ -44,5 +44,18 @@ describe('quy box về toạ độ màn hình', () => {
     const r = boxToScreen(mid, 1280, 720, 2460, 1080);
     expect(r.left).toBeCloseTo(2460 / 2, 5);
     expect(r.top).toBeCloseTo(1080 / 2, 5);
+  });
+
+  it('đầu-cuối: box của model phủ trọn khung thì phủ trọn màn hình', () => {
+    // Ô vuông letterbox phủ hết → qua hai chặng phải ra đúng chiều cao màn.
+    const frameBox = toFrameBox(
+      { xmin: 0, ymin: 0, xmax: 1, ymax: 1 },
+      'contain',
+      FW,
+      FH,
+    );
+    const r = boxToScreen(frameBox, FW, FH, SW, SH);
+    expect(r.top).toBeCloseTo(0, 5);
+    expect(r.height).toBeCloseTo(SH, 5);
   });
 });

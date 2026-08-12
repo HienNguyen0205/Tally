@@ -37,6 +37,10 @@
 	<string>Ứng dụng cần truy cập camera để phát hiện người trong khung hình.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string/>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Ứng dụng cần truy cập thư viện ảnh để quét ảnh có sẵn và lưu ảnh đã gắn khung.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Ứng dụng lưu ảnh đã gắn khung nhận diện vào thư viện ảnh của bạn.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIRequiredDeviceCapabilities</key>

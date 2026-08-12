@@ -1,4 +1,4 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { PanResponder, Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
@@ -26,11 +26,15 @@ export function ZoomSelector({ steps, value, onChange }: Props) {
   const index = Math.max(0, steps.indexOf(value));
   const pos = useSharedValue(index);
   const startIndex = useRef(index);
+  const dragging = useRef(false);
 
-  // Đồng bộ khi giá trị bị đổi từ bên ngoài (vd: reset về 1x).
-  if (Math.abs(pos.value - index) > 0.001 && startIndex.current === index) {
+  // Đồng bộ khi giá trị bị đổi từ bên ngoài (vd: reset về 1x). Phải nằm trong
+  // effect: đọc/ghi shared value giữa thân render là tác dụng phụ lúc React
+  // đang dựng cây. Bỏ qua khi đang kéo, không thì hai bên giành nhau con trỏ.
+  useEffect(() => {
+    if (dragging.current) return;
     pos.value = withTiming(index, { duration: 420, easing: ease });
-  }
+  }, [index, pos]);
 
   const moveTo = (i: number) => {
     const clamped = Math.min(steps.length - 1, Math.max(0, i));
@@ -46,6 +50,7 @@ export function ZoomSelector({ steps, value, onChange }: Props) {
         // Chỉ cướp cử chỉ khi thật sự kéo ngang, để cú chạm vẫn tới được nút.
         onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 6,
         onPanResponderGrant: () => {
+          dragging.current = true;
           startIndex.current = Math.round(pos.value);
         },
         onPanResponderMove: (_, g) => {
@@ -53,10 +58,14 @@ export function ZoomSelector({ steps, value, onChange }: Props) {
           pos.value = Math.min(steps.length - 1, Math.max(0, raw));
         },
         onPanResponderRelease: () => {
+          dragging.current = false;
           // Thả ra thì bám vào mức gần nhất.
           moveTo(Math.round(pos.value));
         },
-        onPanResponderTerminate: () => moveTo(Math.round(pos.value)),
+        onPanResponderTerminate: () => {
+          dragging.current = false;
+          moveTo(Math.round(pos.value));
+        },
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [steps, value, onChange],
@@ -95,7 +104,10 @@ function ZoomLabel({
   active: boolean;
 }) {
   const on = useSharedValue(active ? 1 : 0);
-  on.value = withTiming(active ? 1 : 0, { duration: 320, easing: ease });
+  // Ghi shared value phải nằm trong effect, không phải giữa thân render.
+  useEffect(() => {
+    on.value = withTiming(active ? 1 : 0, { duration: 320, easing: ease });
+  }, [active, on]);
 
   const style = useAnimatedStyle(() => ({
     opacity: 0.55 + 0.45 * on.value,

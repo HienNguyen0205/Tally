@@ -28,11 +28,21 @@ interface Props {
  * trên JS thread nhưng chỉ ghi vào shared value, còn phần vẽ do Reanimated lo
  * trên UI thread nên vẫn mượt.
  */
+/** Ngưỡng (0.2..0.9) → vị trí trên thanh trượt (0..1). */
+function toProgress(value: number): number {
+  return (value - MIN) / (MAX - MIN);
+}
+
 export function ThresholdSlider({ value, onChange }: Props) {
   const travel = TRACK_W - KNOB;
-  const progress = useSharedValue((value - MIN) / (MAX - MIN));
+  const progress = useSharedValue(toProgress(value));
   // Giá trị lúc bắt đầu kéo, để cộng dồn quãng đường ngón tay.
-  const startProgress = useRef(progress.value);
+  //
+  // Tính lại từ prop chứ KHÔNG đọc progress.value: đối số của useRef được ước
+  // lượng ở mọi lần render (dù chỉ lần đầu được dùng), mà đọc shared value giữa
+  // thân render đúng là thứ Reanimated cảnh báo. Dù sao onPanResponderGrant
+  // cũng ghi đè trước khi ai kịp dùng tới.
+  const startProgress = useRef(toProgress(value));
   const grabbed = useSharedValue(0);
 
   const clamp = (v: number) => Math.min(1, Math.max(0, v));

@@ -6,11 +6,11 @@ import React, {
   useState,
 } from 'react';
 import {
+  Alert,
   View,
   Text,
   StyleSheet,
   Pressable,
-  Platform,
   useWindowDimensions,
 } from 'react-native';
 import Animated, {
@@ -25,7 +25,12 @@ import {
   type TorchMode,
 } from 'react-native-vision-camera';
 import { SkiaCamera, type SkiaCameraRef } from 'react-native-vision-camera-skia';
-import { Skia, PaintStyle, FontWeight } from '@shopify/react-native-skia';
+import {
+  Canvas,
+  Image as SkiaImage,
+  Skia,
+  type SkImage,
+} from '@shopify/react-native-skia';
 import { useTensorflowModel } from 'react-native-fast-tflite';
 import { useResizer } from 'react-native-vision-camera-resizer';
 import { createSynchronizable, scheduleOnRN } from 'react-native-worklets';
@@ -34,9 +39,8 @@ import {
   PERSON_CLASS_ID,
   MODEL_SIZE,
   SCORE_THRESHOLD,
-  MAX_DETECTIONS,
+  NMS_IOU,
 } from '../constants';
-import { COCO_LABELS, labelVi } from '../labels';
 import { useAlert } from '../hooks/useAlert';
 import { useSavePhoto } from '../hooks/useSavePhoto';
 import { ResultIsland } from '../components/ResultIsland';
@@ -49,17 +53,19 @@ import { ZoomSelector } from '../components/ZoomSelector';
 import { ReviewBar } from '../components/ReviewBar';
 import { LaunchScreen } from '../components/LaunchScreen';
 import { DetailSheet, type DetailInfo } from '../components/DetailSheet';
-import { boxToScreen } from '../boxLayout';
+import { DetectionBox } from '../components/DetectionBox';
+import { ClassFilter } from '../components/ClassFilter';
+import { PhotoPicker, toScanUri } from '../components/PhotoPicker';
+import { boxToScreen, toFrameBox } from '../boxLayout';
+import {
+  mergeDetections,
+  passesThreshold,
+  type Detection,
+} from '../detections';
+import { readFrameDetections } from '../runModel';
+import { scanImage } from '../scanImage';
+import { annotate } from '../annotate';
 import { COLORS, EASE_OUT_EXPO, FONT, RADIUS } from '../theme';
-
-export interface Detection {
-  ymin: number;
-  xmin: number;
-  ymax: number;
-  xmax: number;
-  score: number;
-  classId: number;
-}
 
 // 'idle': xem trước, chờ bấm chụp | 'capturing': quét đúng 1 frame kế tiếp
 // 'frozen': tắt camera, giữ nguyên ảnh đã quét
@@ -68,43 +74,18 @@ type Mode = 'idle' | 'capturing' | 'frozen';
 // Animation quét hiển thị thêm sau khi ảnh đã đóng băng, để thấy được là đang quét.
 const SCAN_ANIM_MS = 900;
 
-// Paint/Font tạo 1 lần ở module scope, tái sử dụng trong worklet.
-const PERSON_COLOR = '#00E676'; // người - xanh
-const OBJECT_COLOR = '#FFC400'; // vật thể khác - vàng
-
-function makePaint(color: string, style: PaintStyle, strokeWidth = 0) {
-  const paint = Skia.Paint();
-  paint.setColor(Skia.Color(color));
-  paint.setStyle(style);
-  if (strokeWidth > 0) paint.setStrokeWidth(strokeWidth);
-  return paint;
-}
-const personPaint = makePaint(PERSON_COLOR, PaintStyle.Stroke, 4);
-const objectPaint = makePaint(OBJECT_COLOR, PaintStyle.Stroke, 4);
-// Nền nhãn tô đặc cùng màu box, chữ đen lên trên cho dễ đọc.
-const personFill = makePaint(PERSON_COLOR, PaintStyle.Fill);
-const objectFill = makePaint(OBJECT_COLOR, PaintStyle.Fill);
-const textPaint = makePaint('#000000', PaintStyle.Fill);
-
-// Phải đặt đúng tên family có thật trên máy. 'System'/'Roboto'/chuỗi rỗng đều
-// trả về Typeface trông hợp lệ nhưng KHÔNG có glyph (đo chữ ra width = 0, vẽ ra
-// vô hình). Chỉ 'sans-serif' hoạt động - đây là tên family Android thật sự có.
-const LABEL_FONT_FAMILY = Platform.select({
-  android: 'sans-serif',
-  default: 'Helvetica',
-});
-const labelFont = Skia.Font(
-  Skia.FontMgr.System().matchFamilyStyle(LABEL_FONT_FAMILY, {
-    weight: FontWeight.Bold,
-  }),
-  24,
-);
-
-
 const pressEase = Easing.bezier(...EASE_OUT_EXPO);
 
 // Các mức zoom quen thuộc; mức nào vượt quá khả năng máy sẽ tự bị loại bỏ.
 const ZOOM_STEPS = [1, 2, 3, 5];
+
+const RESIZER_FORMAT = {
+  width: MODEL_SIZE,
+  height: MODEL_SIZE,
+  channelOrder: 'rgb',
+  dataType: 'uint8',
+  pixelLayout: 'interleaved',
+} as const;
 
 /** Màn hình trạng thái (xin quyền, đang nạp, lỗi) - thẻ nổi 2 lớp. */
 function StateScreen({
@@ -160,14 +141,20 @@ export function DetectorScreen() {
     null,
   );
   const [picked, setPicked] = useState<Detection | null>(null);
+  // Class bị tắt trên hàng chip lọc. Rỗng = hiện tất cả.
+  const [hidden, setHidden] = useState<ReadonlySet<number>>(new Set());
+  // Ảnh chọn từ thư viện. Khác null nghĩa là đang xem ảnh có sẵn chứ không phải
+  // ảnh vừa chụp - dùng cho cả việc hiển thị lẫn lúc lưu.
+  const [photo, setPhoto] = useState<SkImage | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   // --- Điều khiển camera ---
   const [facing, setFacing] = useState<'back' | 'front'>('back');
   const device = useCameraDevice(facing);
   const [torch, setTorch] = useState<TorchMode>('off');
   const [zoom, setZoom] = useState(1);
-  // Ngưỡng áp dụng cho LẦN CHỤP SAU: box đã được vẽ chết vào ảnh đóng băng nên
-  // đổi ngưỡng không thể lọc lại kết quả cũ.
+  // Box được vẽ đè lên ảnh chứ không nung vào ảnh, nên đổi ngưỡng là lọc lại
+  // được ngay trên tấm ảnh đang xem - không phải chụp lại.
   const [threshold, setThreshold] = useState(SCORE_THRESHOLD);
 
   const [focusPoint, setFocusPoint] = useState<{ x: number; y: number } | null>(
@@ -206,19 +193,21 @@ export function DetectorScreen() {
   const model =
     objectDetection.state === 'loaded' ? objectDetection.model : undefined;
 
-
-  // --- Resize frame về đúng kích thước model yêu cầu (GPU-accelerated) ---
-  const { resizer, error: resizerError } = useResizer({
-    width: MODEL_SIZE,
-    height: MODEL_SIZE,
-    channelOrder: 'rgb',
-    dataType: 'uint8',
-    // 'contain' = letterbox: giữ trọn khung hình, thêm viền đen cho vừa ô vuông.
-    // Đây cũng là cách tiền xử lý chuẩn của YOLO và phần lớn detector - detector
-    // chịu được viền đen tốt hơn nhiều so với ảnh bị bóp méo tỉ lệ ('stretch').
+  // --- Hai lượt quét, hai cách ép frame vào ô vuông của model ---
+  // 'contain' giữ trọn khung hình nhưng khung dọc 16:9 phải nhét vào ô vuông
+  // nên 44% bề ngang input là viền đen - vật thể nhỏ teo lại chỉ còn vài chục
+  // pixel và trượt. 'cover' cắt lấy ô vuông giữa, dùng trọn 448px cho phần
+  // giữa khung. Chạy cả hai rồi gộp: vừa không mất rìa, vừa thấy được vật thể
+  // nhỏ ở giữa. Đây cũng là cách nâng trần 25 detection/lượt lên 50.
+  const { resizer: wideResizer, error: wideError } = useResizer({
+    ...RESIZER_FORMAT,
     scaleMode: 'contain',
-    pixelLayout: 'interleaved',
   });
+  const { resizer: tightResizer, error: tightError } = useResizer({
+    ...RESIZER_FORMAT,
+    scaleMode: 'cover',
+  });
+  const resizerError = wideError ?? tightError;
 
   useEffect(() => {
     if (!hasPermission) requestPermission();
@@ -226,14 +215,68 @@ export function DetectorScreen() {
 
   // --- Worklet báo kết quả về JS thread ---
   const onScanned = useCallback(
-    (found: Detection[], frameW: number, frameH: number) => {
-      setResult(found);
+    (wide: Detection[], tight: Detection[], frameW: number, frameH: number) => {
+      // Quy cả hai lượt về hệ toạ độ của frame TRƯỚC khi gộp - so trực tiếp
+      // toạ độ thô của hai ô vuông khác nhau sẽ ra kết quả vô nghĩa.
+      const merged = mergeDetections(
+        [
+          wide.map(d => ({ ...d, ...toFrameBox(d, 'contain', frameW, frameH) })),
+          tight.map(d => ({ ...d, ...toFrameBox(d, 'cover', frameW, frameH) })),
+        ],
+        NMS_IOU,
+      );
+
+      setResult(merged);
       setFrameSize({ w: frameW, h: frameH });
       setMode('frozen'); // tắt camera ngay, giữ đúng ảnh vừa quét
-      const people = found.filter(d => d.classId === PERSON_CLASS_ID).length;
+
+      const people = merged.filter(
+        d => d.classId === PERSON_CLASS_ID && passesThreshold(d, threshold),
+      ).length;
       if (people > 0) onAlert(people);
     },
-    [onAlert],
+    [onAlert, threshold],
+  );
+
+  // --- Quét ảnh có sẵn trong thư viện ---
+  // Cùng model, cùng hai lượt, cùng phép gộp như ảnh chụp - chỉ khác chỗ lấy
+  // pixel: resizer chỉ nhận Frame của camera nên ảnh phải đi đường Skia.
+  const onPickPhoto = useCallback(
+    async (uri: string) => {
+      setPickerOpen(false);
+      if (model == null) return;
+
+      setScanning(true);
+      try {
+        // iOS phải đổi 'ph://' thành file tạm trước; Android đã là file sẵn.
+        const data = await Skia.Data.fromURI(await toScanUri(uri));
+        const image = Skia.Image.MakeImageFromEncoded(data);
+        if (image == null) throw new Error('không giải mã được ảnh');
+
+        const found = scanImage(model, image);
+        if (found == null) throw new Error('không dựng được surface xử lý ảnh');
+
+        setPhoto(image);
+        setFrameSize({ w: image.width(), h: image.height() });
+        setResult(found);
+        setHidden(new Set());
+        setPicked(null);
+        resetSave();
+        setMode('frozen');
+
+        const people = found.filter(
+          d => d.classId === PERSON_CLASS_ID && passesThreshold(d, threshold),
+        ).length;
+        if (people > 0) onAlert(people);
+      } catch (e) {
+        console.warn('[DetectorScreen] quét ảnh từ thư viện thất bại', e);
+        setScanning(false);
+        // Báo hẳn ra chứ không nuốt: bấm vào ảnh mà không có gì xảy ra thì
+        // người dùng chỉ biết là app hỏng.
+        Alert.alert('Không quét được ảnh', String(e));
+      }
+    },
+    [model, threshold, onAlert, resetSave],
   );
 
   // Animation quét chạy thêm một lúc để người dùng kịp thấy phản hồi.
@@ -242,6 +285,46 @@ export function DetectorScreen() {
     const t = setTimeout(() => setScanning(false), SCAN_ANIM_MS);
     return () => clearTimeout(t);
   }, [scanning]);
+
+  // Box đang mở chi tiết mà bị ngưỡng hoặc bộ lọc class ẩn đi thì bảng chi tiết
+  // phải đóng theo, không thì nó trỏ vào thứ không còn trên màn.
+  useEffect(() => {
+    if (picked == null) return;
+    if (!passesThreshold(picked, threshold) || hidden.has(picked.classId)) {
+      setPicked(null);
+    }
+  }, [picked, threshold, hidden]);
+
+  // Qua được ngưỡng - đây là tập mà hàng chip đếm, nên tắt một class không làm
+  // chip của nó biến mất khỏi danh sách.
+  const scored = useMemo(
+    () => result?.filter(d => passesThreshold(d, threshold)) ?? [],
+    [result, threshold],
+  );
+
+  const visible = useMemo(
+    () => scored.filter(d => !hidden.has(d.classId)),
+    [scored, hidden],
+  );
+
+  const classCounts = useMemo(() => {
+    const byClass = new Map<number, number>();
+    for (const d of scored) {
+      byClass.set(d.classId, (byClass.get(d.classId) ?? 0) + 1);
+    }
+    return [...byClass]
+      .map(([classId, count]) => ({ classId, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [scored]);
+
+  const toggleClass = useCallback((classId: number) => {
+    setHidden(prev => {
+      const next = new Set(prev);
+      if (next.has(classId)) next.delete(classId);
+      else next.add(classId);
+      return next;
+    });
+  }, []);
 
   if (device == null) {
     return <StateScreen eyebrow="THIẾT BỊ" title="Không tìm thấy camera" />;
@@ -282,35 +365,26 @@ export function DetectorScreen() {
     );
   }
 
-  const peopleCount =
-    result?.filter(d => d.classId === PERSON_CLASS_ID).length ?? 0;
+  const peopleCount = visible.filter(
+    d => d.classId === PERSON_CLASS_ID,
+  ).length;
 
   // Loại sẵn các mức vượt quá khả năng phóng của ống kính.
   const zoomSteps = ZOOM_STEPS.filter(z => z <= device.maxZoom);
 
-  // Toạ độ model nằm trong ô vuông letterbox chứ không phải khung hình, nên
-  // phải quy về hệ frame trước khi nói "chiếm bao nhiêu %" hay "nằm ở đâu" -
-  // nếu lấy thẳng số chuẩn hoá sẽ báo tỉ lệ nhỏ hơn thực tế.
   const pickedInfo: DetailInfo | null =
-    picked != null && frameSize != null
-      ? (() => {
-          const r = boxToScreen(
-            picked,
-            frameSize.w,
-            frameSize.h,
-            frameSize.w,
-            frameSize.h,
-          );
-          return {
-            classId: picked.classId,
-            score: picked.score,
-            areaRatio:
-              (r.width * r.height) / (frameSize.w * frameSize.h),
-            centerX: (r.left + r.width / 2) / frameSize.w,
-            centerY: (r.top + r.height / 2) / frameSize.h,
-          };
-        })()
+    picked != null
+      ? {
+          classId: picked.classId,
+          score: picked.score,
+          areaRatio: (picked.xmax - picked.xmin) * (picked.ymax - picked.ymin),
+        }
       : null;
+
+  const reviewing = mode === 'frozen' && !scanning;
+  // Lúc xem ảnh chỉ còn thanh ngưỡng là có tác dụng; đèn/zoom/đổi camera thì
+  // không. Và khi bảng chi tiết đang mở thì nhường hẳn chỗ cho nó.
+  const showTools = (mode === 'idle' || reviewing) && picked == null;
 
   return (
     <View style={styles.container}>
@@ -357,109 +431,46 @@ export function DetectorScreen() {
             return;
           }
 
-          // Buffer đã xoay đứng nên frame.width/height chính là chiều thật.
-          //
-          // resizer dùng scaleMode 'contain' (letterbox): toàn bộ khung hình
-          // được thu vừa vào ô vuông 320x320, phần thừa là viền đen. Ô vuông đó
-          // tương ứng với hình vuông cạnh = CẠNH DÀI của frame, đặt giữa frame -
-          // nên offset âm chính là phần viền đen cần trừ đi.
-          //
-          // Trước đây dùng 'cover' (cắt ô vuông giữa theo cạnh NGẮN) khiến 44%
-          // chiều dọc không bao giờ được đưa vào model: người đứng ở mép trên
-          // hoặc dưới ảnh không bao giờ bị phát hiện, dù preview vẫn hiện họ.
-          const boxSize = Math.max(frame.width, frame.height);
-          const offsetX = (frame.width - boxSize) / 2;
-          const offsetY = (frame.height - boxSize) / 2;
-          // Cỡ chữ nhãn bám cạnh ngắn để không đổi kích thước theo tỉ lệ khung.
-          const shortSide = Math.min(frame.width, frame.height);
+          if (
+            cmd === 'capturing' &&
+            model != null &&
+            wideResizer != null &&
+            tightResizer != null
+          ) {
+            const wide = readFrameDetections(model, wideResizer, frame);
+            const tight = readFrameDetections(model, tightResizer, frame);
 
-          // Box chỉ cần sống trong đúng frame tính ra nó: chụp xong là dừng
-          // render, nên không phải giữ state qua các frame.
-          let boxesToDraw: Detection[] = [];
-
-          if (cmd === 'capturing' && model != null && resizer != null) {
-            const resized = resizer.resize(frame);
-            const inputBuffer = resized.getPixelBuffer();
-            const outputs = model.runSync([inputBuffer]);
-            resized.dispose();
-
-            // Thứ tự output đã kiểm chứng bằng model.outputs của lite2:
-            //   [0] [1,25,4] boxes | [1] [1,25] classes
-            //   [2] [1,25] scores  | [3] [1] số lượng
-            // Đổi model khác thì phải log lại model.outputs để xác nhận.
-            const boxes = new Float32Array(outputs[0]!);
-            const classes = new Float32Array(outputs[1]!);
-            const scores = new Float32Array(outputs[2]!);
-            const numDetections = new Float32Array(outputs[3]!);
-            const detCount = Math.min(Number(numDetections[0]), MAX_DETECTIONS);
-
-            const found: Detection[] = [];
-            for (let i = 0; i < detCount; i++) {
-              if (Number(scores[i]) < threshold) continue;
-              found.push({
-                ymin: boxes[i * 4]!,
-                xmin: boxes[i * 4 + 1]!,
-                ymax: boxes[i * 4 + 2]!,
-                xmax: boxes[i * 4 + 3]!,
-                score: scores[i]!,
-                classId: Number(classes[i]),
-              });
-            }
-
-            boxesToDraw = found;
             // Khoá ngay tại đây (không đợi state React vòng sau) để các frame
             // kế tiếp không quét đè lên ảnh vừa chụp.
             scanCmd.setBlocking('frozen');
-            // Gửi kèm kích thước frame: JS cần nó để quy box về toạ độ màn hình
-            // cho vùng chạm, vì box đang ở hệ toạ độ của ô vuông letterbox.
-            scheduleOnRN(onScanned, found, frame.width, frame.height);
+            // Gửi kèm kích thước frame: JS cần nó để quy box về hệ khung hình.
+            scheduleOnRN(onScanned, wide, tight, frame.width, frame.height);
           }
-
-          // Cỡ chữ theo độ phân giải frame (toạ độ vẽ là pixel của frame,
-          // không phải pixel màn hình) để nhãn không bị bé tí trên frame lớn.
-          const fontSize = Math.max(16, Math.round(shortSide * 0.045));
-          labelFont.setSize(fontSize);
-          const padX = fontSize * 0.35;
-          const chipH = fontSize * 1.5;
 
           render(({ frameTexture, canvas }) => {
             canvas.drawImage(frameTexture, 0, 0);
-
-            for (const box of boxesToDraw) {
-              const isPerson = box.classId === PERSON_CLASS_ID;
-              const x = offsetX + box.xmin * boxSize;
-              const y = offsetY + box.ymin * boxSize;
-              const w = (box.xmax - box.xmin) * boxSize;
-              const h = (box.ymax - box.ymin) * boxSize;
-
-              canvas.drawRect(
-                Skia.XYWHRect(x, y, w, h),
-                isPerson ? personPaint : objectPaint,
-              );
-
-              const name = COCO_LABELS[box.classId] ?? `#${box.classId}`;
-              const text = `${name} ${Math.round(box.score * 100)}%`;
-              const textW = labelFont.measureText(text).width;
-
-              // Nhãn nằm trên box; nếu box sát mép trên thì lật xuống trong box.
-              const chipY = y - chipH >= 0 ? y - chipH : y;
-              canvas.drawRect(
-                Skia.XYWHRect(x, chipY, textW + padX * 2, chipH),
-                isPerson ? personFill : objectFill,
-              );
-              canvas.drawText(
-                text,
-                x + padX,
-                chipY + chipH - fontSize * 0.4,
-                textPaint,
-                labelFont,
-              );
-            }
           });
 
           frame.dispose();
         }}
       />
+
+      {/* Ảnh chọn từ thư viện, đè hẳn lên canvas camera đã đóng băng.
+          Vẽ bằng chính SkImage đã đưa cho model, fit="cover" khớp đúng phép
+          quy toạ độ của boxToScreen - dùng <Image> của RN thì còn phải lo
+          chuyện EXIF xoay ảnh khác nhau giữa hai bên. */}
+      {photo != null && (
+        <Canvas style={StyleSheet.absoluteFill}>
+          <SkiaImage
+            image={photo}
+            x={0}
+            y={0}
+            width={winW}
+            height={winH}
+            fit="cover"
+          />
+        </Canvas>
+      )}
 
       {/* Chạm vào khung hình để lấy nét. Nằm dưới mọi nút nên không cướp chạm. */}
       {mode === 'idle' && (
@@ -484,8 +495,8 @@ export function DetectorScreen() {
         />
       )}
 
-      {/* Chạm ra ngoài box để đóng bảng chi tiết. Nằm dưới các vùng chạm box
-          nên chạm sang box khác vẫn đổi được, không bị nền nuốt mất. */}
+      {/* Chạm ra ngoài box để đóng bảng chi tiết. Nằm dưới các box nên chạm
+          sang box khác vẫn đổi được, không bị nền nuốt mất. */}
       {picked != null && (
         <Pressable
           style={StyleSheet.absoluteFill}
@@ -494,32 +505,18 @@ export function DetectorScreen() {
         />
       )}
 
-      {/* Vùng chạm trong suốt đè lên từng box đã vẽ, để xem chi tiết. */}
-      {mode === 'frozen' &&
-        !scanning &&
+      {/* Box vẽ đè lên ảnh đã đóng băng - đổi ngưỡng là hiện/ẩn ngay. */}
+      {reviewing &&
         frameSize != null &&
-        result?.map((d, i) => {
-          const r = boxToScreen(d, frameSize.w, frameSize.h, winW, winH);
-          return (
-            <Pressable
-              key={i}
-              style={[
-                styles.hitBox,
-                {
-                  left: r.left,
-                  top: r.top,
-                  width: r.width,
-                  height: r.height,
-                },
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel={`${labelVi(d.classId)}, độ tin cậy ${Math.round(
-                d.score * 100,
-              )} phần trăm. Chạm để xem chi tiết.`}
-              onPress={() => setPicked(d)}
-            />
-          );
-        })}
+        visible.map((d, i) => (
+          <DetectionBox
+            key={i}
+            detection={d}
+            rect={boxToScreen(d, frameSize.w, frameSize.h, winW, winH)}
+            selected={picked === d}
+            onPress={() => setPicked(d)}
+          />
+        ))}
 
       {picked != null && (
         <View
@@ -530,10 +527,7 @@ export function DetectorScreen() {
               : styles.detailAnchorPortrait,
           ]}
         >
-          <DetailSheet
-            info={pickedInfo!}
-            onClose={() => setPicked(null)}
-          />
+          <DetailSheet info={pickedInfo!} onClose={() => setPicked(null)} />
         </View>
       )}
 
@@ -541,43 +535,66 @@ export function DetectorScreen() {
 
       <ResultIsland
         peopleCount={peopleCount}
-        objectCount={result?.length ?? 0}
+        objectCount={visible.length}
         hasResult={result != null}
       />
 
-      {/* Cụm chỉnh camera - ẩn khi đang xem ảnh đã đóng băng vì không còn tác dụng. */}
-      {mode === 'idle' && (
+      {showTools && (
         <View
           style={[
             styles.tools,
             landscape ? styles.toolsLandscape : styles.toolsPortrait,
+            reviewing && !landscape && styles.toolsReviewPortrait,
           ]}
         >
-          <GlassSurface pill contentStyle={styles.toolRow}>
-            <IconButton
-              name="bolt"
-              label={torch === 'on' ? 'Tắt đèn flash' : 'Bật đèn flash'}
-              active={torch === 'on'}
-              // Camera trước không có đèn nên khoá hẳn, tránh bấm vô ích.
-              disabled={facing === 'front'}
-              onPress={() => setTorch(t => (t === 'on' ? 'off' : 'on'))}
+          {/* Lọc theo loại vật thể - chỉ có nghĩa khi đã có kết quả. */}
+          {reviewing && (
+            <ClassFilter
+              counts={classCounts}
+              hidden={hidden}
+              onToggle={toggleClass}
             />
+          )}
+
+          <GlassSurface pill contentStyle={styles.toolRow}>
+            {mode === 'idle' && (
+              <IconButton
+                name="bolt"
+                label={torch === 'on' ? 'Tắt đèn flash' : 'Bật đèn flash'}
+                active={torch === 'on'}
+                // Camera trước không có đèn nên khoá hẳn, tránh bấm vô ích.
+                disabled={facing === 'front'}
+                onPress={() => setTorch(t => (t === 'on' ? 'off' : 'on'))}
+              />
+            )}
+
+            {mode === 'idle' && (
+              <IconButton
+                name="image"
+                label="Quét ảnh có sẵn trong thư viện"
+                onPress={() => setPickerOpen(true)}
+              />
+            )}
 
             <ThresholdSlider value={threshold} onChange={setThreshold} />
 
-            <IconButton
-              name="flip"
-              label="Đổi camera trước sau"
-              onPress={() => {
-                setFacing(f => (f === 'back' ? 'front' : 'back'));
-                setTorch('off'); // camera trước không có đèn
-              }}
-            />
+            {mode === 'idle' && (
+              <IconButton
+                name="flip"
+                label="Đổi camera trước sau"
+                onPress={() => {
+                  setFacing(f => (f === 'back' ? 'front' : 'back'));
+                  setTorch('off'); // camera trước không có đèn
+                }}
+              />
+            )}
           </GlassSurface>
 
-          <GlassSurface pill contentStyle={styles.zoomRow}>
-            <ZoomSelector steps={zoomSteps} value={zoom} onChange={setZoom} />
-          </GlassSurface>
+          {mode === 'idle' && (
+            <GlassSurface pill contentStyle={styles.zoomRow}>
+              <ZoomSelector steps={zoomSteps} value={zoom} onChange={setZoom} />
+            </GlassSurface>
+          )}
         </View>
       )}
 
@@ -587,17 +604,29 @@ export function DetectorScreen() {
           landscape ? styles.controlsLandscape : styles.controlsPortrait,
         ]}
       >
-        {mode === 'frozen' && !scanning ? (
+        {reviewing ? (
           // Xem ảnh: hàng icon gọn, nhường tối đa diện tích cho khung hình.
           <ReviewBar
             saveState={saveState}
             onRetake={() => {
               setResult(null);
               setPicked(null);
+              setPhoto(null);
+              setHidden(new Set());
               resetSave();
               setMode('idle');
             }}
-            onSave={() => save(camera.current?.takeSnapshot())}
+            onSave={() => {
+              // Ảnh thư viện thì lưu chính nó, ảnh chụp thì lấy từ canvas.
+              const source = photo ?? camera.current?.takeSnapshot();
+              // Box trên màn là View, không nằm trong ảnh - phải nung vào pixel
+              // trước khi lưu, và chỉ nung đúng những box đang hiện.
+              save(
+                source != null && frameSize != null
+                  ? annotate(source, visible, frameSize.w, frameSize.h)
+                  : undefined,
+              );
+            }}
           />
         ) : (
           <>
@@ -639,6 +668,13 @@ export function DetectorScreen() {
           </>
         )}
       </View>
+
+      {pickerOpen && (
+        <PhotoPicker
+          onPick={onPickPhoto}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
     </View>
   );
 }
@@ -710,6 +746,8 @@ const styles = StyleSheet.create({
   // 54 (đáy) + 86 (nút chụp) + 16 + chữ gợi ý ≈ 170 là đỉnh cụm nút chụp,
   // nên phải đẩy lên hẳn để hai cụm không dính vào nhau.
   toolsPortrait: { bottom: 208, left: 0, right: 0 },
+  // Lúc xem ảnh nút chụp nhường chỗ cho ReviewBar thấp hơn hẳn, hạ theo.
+  toolsReviewPortrait: { bottom: 150 },
   // Nằm ngang: dồn về giữa-trái, chừa cạnh phải cho nút chụp.
   toolsLandscape: { bottom: 24, left: 0, right: 160 },
   toolRow: {
@@ -720,8 +758,7 @@ const styles = StyleSheet.create({
   },
   zoomRow: { paddingHorizontal: 4, paddingVertical: 3 },
 
-  // --- Chạm vào box xem chi tiết ---
-  hitBox: { position: 'absolute' },
+  // --- Bảng chi tiết ---
   detailAnchor: { position: 'absolute', alignItems: 'center' },
   detailAnchorPortrait: { bottom: 190, left: 0, right: 0 },
   // Nằm ngang: nép sang trái, chừa cạnh phải cho nút chụp.
@@ -774,10 +811,4 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.accent,
   },
   shutterCoreBusy: { backgroundColor: 'rgba(0,230,118,0.35)' },
-  shutterIcon: {
-    fontSize: 26,
-    color: COLORS.textPrimary,
-    fontFamily: FONT.regular,
-  },
-  refreshCanvas: { width: 26, height: 26 },
 });

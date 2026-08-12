@@ -25,6 +25,17 @@ const PATHS = {
   check: makePath('M20 6 L9 17 L4 12'),
   // Mũi tên quay lại - chụp lại
   refresh: makePath('M23 4 L23 10 L17 10 M20.49 15 A9 9 0 1 1 18.37 5.64 L23 10'),
+  // Khung ảnh có núi và mặt trời - chọn ảnh từ thư viện
+  image: makePath(
+    'M3 5.5 A1.5 1.5 0 0 1 4.5 4 L19.5 4 A1.5 1.5 0 0 1 21 5.5 L21 18.5 ' +
+      'A1.5 1.5 0 0 1 19.5 20 L4.5 20 A1.5 1.5 0 0 1 3 18.5 Z ' +
+      'M3 16 L8.5 10.5 L14 16 M13 15 L16.5 11.5 L21 16 ' +
+      'M15.5 8.5 A1.2 1.2 0 1 0 15.5 8.4',
+  ),
+  // Phễu lọc - lọc theo loại vật thể
+  filter: makePath('M3 4.5 L21 4.5 L14 12.5 L14 20 L10 17.5 L10 12.5 Z'),
+  // Mũi tên xuống - mở rộng/thu gọn (xoay 180° khi mở)
+  chevron: makePath('M6 9.5 L12 15.5 L18 9.5'),
   // Vòng ngắm - ngưỡng tin cậy
   target: makePath(
     'M12 3.5 A8.5 8.5 0 1 0 12 20.5 A8.5 8.5 0 1 0 12 3.5 ' +
