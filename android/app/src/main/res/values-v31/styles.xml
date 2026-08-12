@@ -1,0 +1,23 @@
+<resources>
+
+    <!--
+      Android 12+ (API 31) tự dựng màn hình khởi động bằng API riêng và BỎ QUA
+      windowBackground. Nếu không khai báo ở đây, hệ điều hành sẽ lấy icon
+      launcher đặt trên nền trắng mặc định - lệch hẳn với app nền đen.
+    -->
+    <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
+
+        <!-- File này THAY THẾ hẳn values/styles.xml trên API 31+ chứ không hợp
+             nhất, nên phải khai lại windowBackground. Thiếu nó thì sau khi
+             splash tắt, cửa sổ rơi về màu xám mặc định của theme cha trong lúc
+             chờ React Native nạp. -->
+        <item name="android:windowBackground">@drawable/splash_screen</item>
+
+        <item name="android:windowSplashScreenBackground">@color/brand_bg</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_splash_logo</item>
+        <!-- Bỏ nền tròn quanh icon để logo nổi thẳng trên nền đen -->
+        <item name="android:windowSplashScreenIconBackgroundColor">@android:color/transparent</item>
+    </style>
+
+</resources>

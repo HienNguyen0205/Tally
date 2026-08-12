@@ -1,0 +1,36 @@
+<!--
+  Bản đơn sắc cho "themed icon" của Android 13+: hệ điều hành tự tô màu theo
+  hình nền nên mọi nét phải cùng một màu, không được giữ tương phản xanh/trắng.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:pathData="M38,38 L38,70"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="5.5"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M49,38 L49,70"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="5.5"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M60,38 L60,70"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="5.5"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M71,38 L71,70"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="5.5"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M32,72 L77,36"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="5.5"
+        android:strokeLineCap="round" />
+</vector>

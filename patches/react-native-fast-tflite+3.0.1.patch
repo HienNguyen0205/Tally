@@ -1,0 +1,45 @@
+warning: in the working copy of 'orig/node_modules/react-native-fast-tflite/android/src/main/java/com/margelo/nitro/tflite/HybridAssetLoader.kt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'mod/node_modules/react-native-fast-tflite/android/src/main/java/com/margelo/nitro/tflite/HybridAssetLoader.kt', LF will be replaced by CRLF the next time Git touches it
+diff --git a/node_modules/react-native-fast-tflite/android/src/main/java/com/margelo/nitro/tflite/HybridAssetLoader.kt b/node_modules/react-native-fast-tflite/android/src/main/java/com/margelo/nitro/tflite/HybridAssetLoader.kt
+index c2360f5..76c68e5 100644
+--- a/node_modules/react-native-fast-tflite/android/src/main/java/com/margelo/nitro/tflite/HybridAssetLoader.kt
++++ b/node_modules/react-native-fast-tflite/android/src/main/java/com/margelo/nitro/tflite/HybridAssetLoader.kt
+@@ -2,6 +2,7 @@ package com.margelo.nitro.tflite
+ 
+ import androidx.annotation.Keep
+ import com.facebook.proguard.annotations.DoNotStrip
++import com.margelo.nitro.NitroModules
+ import com.margelo.nitro.core.ArrayBuffer
+ import com.margelo.nitro.core.Promise
+ import java.net.URL
+@@ -11,8 +12,29 @@ import java.net.URL
+ class HybridAssetLoader : HybridAssetLoaderSpec() {
+   override fun loadAsset(path: String): Promise<ArrayBuffer> {
+     return Promise.async {
+-      val bytes = URL(path).readBytes()
++      // Trong bản debug, Metro trả về URL http:// nên đọc thẳng được.
++      // Trong bản release, asset được đóng vào APK và Image.resolveAssetSource()
++      // trả về TÊN TÀI NGUYÊN (vd "assets_models_efficientdet_lite2"), không
++      // phải URL -> URL(path) ném MalformedURLException và model không nạp được.
++      //
++      // Thử phân giải như tài nguyên raw/drawable trước, giống cách
++      // react-native-skia làm trong PlatformContext.java.
++      val bytes = readAsResource(path) ?: URL(path).readBytes()
+       return@async ArrayBuffer.copy(bytes)
+     }
+   }
++
++  private fun readAsResource(name: String): ByteArray? {
++    val context = NitroModules.applicationContext ?: return null
++    val resources = context.resources
++    val pkg = context.packageName
++
++    var id = resources.getIdentifier(name, "raw", pkg)
++    if (id == 0) {
++      id = resources.getIdentifier(name, "drawable", pkg)
++    }
++    if (id == 0) return null
++
++    return resources.openRawResource(id).use { it.readBytes() }
++  }
+ }

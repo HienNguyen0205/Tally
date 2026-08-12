@@ -1,0 +1,15 @@
+<!--
+  Nền cửa sổ lúc khởi động nguội, dùng cho Android 11 trở xuống (từ 12 trở lên
+  hệ điều hành tự dựng splash, xem values-v31/styles.xml).
+
+  Không có nó thì cửa sổ hiện màu trắng mặc định của theme trong lúc chờ React
+  Native nạp - chớp trắng rất chói trên một app nền đen.
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/brand_bg" />
+    <item
+        android:drawable="@drawable/ic_splash_logo"
+        android:gravity="center"
+        android:width="120dp"
+        android:height="120dp" />
+</layer-list>

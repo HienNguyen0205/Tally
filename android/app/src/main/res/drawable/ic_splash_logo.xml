@@ -1,0 +1,37 @@
+<!--
+  Logo cho màn hình khởi động. Android 12+ cắt icon splash theo vòng tròn: khung
+  ngoài 108 nhưng chỉ phần giữa (~2/3) hiện ra, nên nét vẽ co vào giữa nhiều hơn
+  so với icon launcher.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:pathData="M40,42 L40,66"
+        android:strokeColor="#00E676"
+        android:strokeWidth="4.5"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M49,42 L49,66"
+        android:strokeColor="#00E676"
+        android:strokeWidth="4.5"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M58,42 L58,66"
+        android:strokeColor="#00E676"
+        android:strokeWidth="4.5"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M67,42 L67,66"
+        android:strokeColor="#00E676"
+        android:strokeWidth="4.5"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M35,68 L72,40"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4.5"
+        android:strokeLineCap="round" />
+</vector>

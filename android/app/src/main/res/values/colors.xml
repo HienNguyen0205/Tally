@@ -1,0 +1,5 @@
+<resources>
+    <!-- Đồng bộ với src/theme.ts để splash nối liền mạch vào giao diện app. -->
+    <color name="brand_bg">#050505</color>
+    <color name="brand_accent">#00E676</color>
+</resources>

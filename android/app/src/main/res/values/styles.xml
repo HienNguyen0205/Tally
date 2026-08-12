@@ -4,6 +4,9 @@
     <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
         <!-- Customize your theme here. -->
         <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
+        <!-- Nền đen + logo trong lúc chờ React Native khởi động, thay cho màn
+             trắng mặc định. Android 12+ ghi đè bằng values-v31/styles.xml. -->
+        <item name="android:windowBackground">@drawable/splash_screen</item>
     </style>
 
 </resources>

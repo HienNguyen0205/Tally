@@ -1,0 +1,42 @@
+<!--
+  Logo Tally: 4 vạch đứng + 1 vạch chéo - đúng cách người ta kiểm đếm bằng tay,
+  vừa hợp tên app vừa nói thẳng chức năng đếm.
+
+  Adaptive icon: khung 108dp nhưng hệ điều hành cắt theo nhiều hình dạng khác
+  nhau, chỉ vùng tròn 66dp ở giữa (toạ độ 21..87) là chắc chắn hiển thị - nên
+  toàn bộ nét nằm gọn trong khoảng đó.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:pathData="M38,38 L38,70"
+        android:strokeColor="#00E676"
+        android:strokeWidth="5.5"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M49,38 L49,70"
+        android:strokeColor="#00E676"
+        android:strokeWidth="5.5"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M60,38 L60,70"
+        android:strokeColor="#00E676"
+        android:strokeWidth="5.5"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M71,38 L71,70"
+        android:strokeColor="#00E676"
+        android:strokeWidth="5.5"
+        android:strokeLineCap="round" />
+
+    <!-- Vạch chéo cắt ngang bốn vạch trên, đánh dấu tròn nhóm 5 -->
+    <path
+        android:pathData="M32,72 L77,36"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="5.5"
+        android:strokeLineCap="round" />
+</vector>
