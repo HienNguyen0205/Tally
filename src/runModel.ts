@@ -6,16 +6,12 @@ import { MAX_DETECTIONS, RAW_SCORE_FLOOR } from './constants';
 import type { Detection } from './detections';
 
 /**
- * Đọc output thô của model thành danh sách detection.
+ * Đọc output thô của model thành danh sách detection. Toạ độ vẫn ở hệ ô vuông
+ * model nhìn thấy, chưa quy về khung hình - xem `toFrameBox`.
  *
- * Toạ độ trả về vẫn nằm trong hệ ô vuông model đã nhìn, chưa quy về khung hình
- * - xem `toFrameBox` trong `src/boxLayout.ts`.
- *
- * Chỉ áp một sàn cứng rất thấp. Ngưỡng thật do JS lọc lúc hiển thị, để kéo
- * thanh ngưỡng là đổi được ngay trên ảnh đã chụp mà không phải quét lại.
- *
- * Đánh dấu 'worklet' vì đường camera gọi hàm này trong worklet; đường quét ảnh
- * từ thư viện gọi thẳng trên JS thread, cả hai đều chạy được.
+ * Chỉ áp sàn cứng; ngưỡng thật do JS lọc lúc hiển thị để kéo thanh ngưỡng là
+ * đổi ngay trên ảnh đã chụp. Đánh dấu 'worklet' vì đường camera gọi trong
+ * worklet, đường quét ảnh gọi thẳng trên JS thread.
  */
 export function parseDetections(outputs: readonly ArrayBuffer[]): Detection[] {
   'worklet';

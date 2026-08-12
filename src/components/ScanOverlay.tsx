@@ -15,7 +15,6 @@ const SWEEP_MS = 1100;
 const GLOW_H = 120;
 const ease = Easing.bezier(...EASE_OUT_EXPO);
 
-/** Một góc của khung ngắm - 2 vạch mảnh ghép thành chữ L. */
 function Corner({ style }: { style: object }) {
   return (
     <View style={[styles.corner, style]}>
@@ -31,8 +30,7 @@ function Corner({ style }: { style: object }) {
  */
 export function ScanOverlay() {
   const { width, height } = useWindowDimensions();
-  // Khung ngắm tính theo cạnh ngắn để cân đối ở cả chiều dọc lẫn chiều ngang -
-  // dùng % cố định thì khi xoay ngang khung sẽ bẹp dí.
+  // Theo cạnh ngắn: dùng % cố định thì xoay ngang khung sẽ bẹp dí.
   const inset = Math.round(Math.min(width, height) * 0.11);
 
   const sweep = useSharedValue(0);

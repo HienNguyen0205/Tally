@@ -42,11 +42,8 @@ function asFileUri(path: string): string {
 }
 
 /**
- * Đường dẫn để HIỂN THỊ ảnh trong lưới.
- *
- * Android trả thẳng 'file://…'. iOS trả 'ph://<id>' - định danh của Photos
- * framework, không phải file - nhưng <Image> của RN hiểu được nhờ handler mà
- * camera-roll cài sẵn, nên để nguyên là đủ.
+ * Đường dẫn để HIỂN THỊ trong lưới. iOS trả 'ph://<id>' - định danh Photos,
+ * không phải file - nhưng <Image> hiểu được nhờ handler camera-roll cài sẵn.
  */
 function displayUri(image: { uri: string; filepath: string | null }): string {
   const path = image.filepath;
@@ -55,10 +52,9 @@ function displayUri(image: { uri: string; filepath: string | null }): string {
 }
 
 /**
- * Đường dẫn để QUÉT - phải là file thật vì Skia không hiểu 'ph://'.
- *
- * Trên iOS phải nhờ Photos framework ghi ảnh ra file tạm; tiện thể chuyển HEIC
- * sang JPEG luôn, vì ảnh mặc định của iPhone là HEIC mà Skia không giải mã được.
+ * Đường dẫn để QUÉT - phải là file thật vì Skia không hiểu 'ph://'. Trên iOS
+ * nhờ Photos ghi ra file tạm, tiện thể chuyển HEIC (mặc định của iPhone, Skia
+ * không giải mã được) sang JPEG.
  */
 export async function toScanUri(uri: string): Promise<string> {
   if (!uri.startsWith('ph://')) return uri;

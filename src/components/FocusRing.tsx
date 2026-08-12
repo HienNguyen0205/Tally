@@ -23,7 +23,6 @@ export function FocusRing({ x, y }: { x: number; y: number }) {
   useEffect(() => {
     anim.value = 0;
     anim.value = withTiming(1, { duration: 320, easing: ease });
-    // Giữ một nhịp rồi mờ đi, không để đọng lại trên khung hình.
     anim.value = withDelay(900, withTiming(0, { duration: 420, easing: ease }));
   }, [anim]);
 

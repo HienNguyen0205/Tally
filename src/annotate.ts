@@ -44,13 +44,10 @@ const labelFont = Skia.Font(
 );
 
 /**
- * Vẽ box + nhãn lên ảnh đã chụp, trả về ảnh mới để đem đi lưu.
+ * Vẽ box + nhãn lên ảnh đã chụp, trả về ảnh mới để đem đi lưu. Trên màn hình
+ * box là View của RN nằm đè lên ảnh, tới lúc lưu mới nung vào pixel.
  *
- * Trên màn hình box là View của RN nằm đè lên ảnh - nhờ vậy đổi ngưỡng là box
- * hiện/ẩn ngay. Nhưng file ảnh lưu ra thì phải có box nung vào pixel, nên tới
- * lúc lưu mới ghép một lần bằng surface ngoài màn hình.
- *
- * Không tạo được surface thì trả lại ảnh trần: lưu ảnh không có box vẫn hơn là
+ * Không tạo được surface thì trả lại ảnh trần: lưu ảnh không box vẫn hơn là
  * báo lỗi và mất luôn tấm ảnh.
  */
 export function annotate(
@@ -68,8 +65,8 @@ export function annotate(
   const canvas = surface.getCanvas();
   canvas.drawImage(photo, 0, 0);
 
-  // Cỡ chữ theo độ phân giải ảnh (toạ độ vẽ là pixel ảnh, không phải pixel màn
-  // hình) để nhãn không bị bé tí trên ảnh lớn.
+  // Cỡ chữ theo độ phân giải ảnh, không phải pixel màn hình - nếu không nhãn
+  // sẽ bé tí trên ảnh lớn.
   const fontSize = Math.max(16, Math.round(Math.min(w, h) * 0.045));
   labelFont.setSize(fontSize);
   const padX = fontSize * 0.35;

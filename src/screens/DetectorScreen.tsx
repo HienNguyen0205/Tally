@@ -117,7 +117,6 @@ function StateScreen({
             onPress={action.onPress}
           >
             <Text style={styles.ctaText}>{action.label}</Text>
-            {/* Mũi tên lồng trong vòng tròn riêng, không đứng trần cạnh chữ. */}
             <View style={styles.ctaIcon}>
               <Text style={styles.ctaArrow}>↗</Text>
             </View>
@@ -143,8 +142,7 @@ export function DetectorScreen() {
   const [picked, setPicked] = useState<Detection | null>(null);
   // Class bị tắt trên hàng chip lọc. Rỗng = hiện tất cả.
   const [hidden, setHidden] = useState<ReadonlySet<number>>(new Set());
-  // Ảnh chọn từ thư viện. Khác null nghĩa là đang xem ảnh có sẵn chứ không phải
-  // ảnh vừa chụp - dùng cho cả việc hiển thị lẫn lúc lưu.
+  // Khác null = đang xem ảnh thư viện chứ không phải ảnh vừa chụp.
   const [photo, setPhoto] = useState<SkImage | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -153,8 +151,7 @@ export function DetectorScreen() {
   const device = useCameraDevice(facing);
   const [torch, setTorch] = useState<TorchMode>('off');
   const [zoom, setZoom] = useState(1);
-  // Box được vẽ đè lên ảnh chứ không nung vào ảnh, nên đổi ngưỡng là lọc lại
-  // được ngay trên tấm ảnh đang xem - không phải chụp lại.
+  // Box vẽ đè lên ảnh nên đổi ngưỡng là lọc lại được ngay, không phải chụp lại.
   const [threshold, setThreshold] = useState(SCORE_THRESHOLD);
 
   const [focusPoint, setFocusPoint] = useState<{ x: number; y: number } | null>(
@@ -167,7 +164,6 @@ export function DetectorScreen() {
   const camera = useRef<SkiaCameraRef>(null);
   const { state: saveState, save, reset: resetSave } = useSavePhoto();
 
-  // Nút lún xuống khi bấm - phản hồi vật lý thay vì đổi màu cứng.
   const press = useSharedValue(0);
   const shutterStyle = useAnimatedStyle(() => ({
     transform: [{ scale: 1 - 0.05 * press.value }],
@@ -194,11 +190,10 @@ export function DetectorScreen() {
     objectDetection.state === 'loaded' ? objectDetection.model : undefined;
 
   // --- Hai lượt quét, hai cách ép frame vào ô vuông của model ---
-  // 'contain' giữ trọn khung hình nhưng khung dọc 16:9 phải nhét vào ô vuông
-  // nên 44% bề ngang input là viền đen - vật thể nhỏ teo lại chỉ còn vài chục
-  // pixel và trượt. 'cover' cắt lấy ô vuông giữa, dùng trọn 448px cho phần
-  // giữa khung. Chạy cả hai rồi gộp: vừa không mất rìa, vừa thấy được vật thể
-  // nhỏ ở giữa. Đây cũng là cách nâng trần 25 detection/lượt lên 50.
+  // Khung dọc 16:9 nhét vào ô vuông thì 44% bề ngang input là viền đen, vật thể
+  // nhỏ teo còn vài chục pixel và trượt. Nên chạy thêm lượt 'cover' dùng trọn
+  // 448px cho phần giữa khung, rồi gộp: không mất rìa mà vẫn thấy vật thể nhỏ.
+  // Cũng là cách nâng trần 25 detection/lượt lên 50.
   const { resizer: wideResizer, error: wideError } = useResizer({
     ...RESIZER_FORMAT,
     scaleMode: 'contain',
@@ -216,8 +211,8 @@ export function DetectorScreen() {
   // --- Worklet báo kết quả về JS thread ---
   const onScanned = useCallback(
     (wide: Detection[], tight: Detection[], frameW: number, frameH: number) => {
-      // Quy cả hai lượt về hệ toạ độ của frame TRƯỚC khi gộp - so trực tiếp
-      // toạ độ thô của hai ô vuông khác nhau sẽ ra kết quả vô nghĩa.
+      // Quy về hệ frame TRƯỚC khi gộp - so trực tiếp toạ độ thô của hai ô
+      // vuông khác nhau sẽ ra kết quả vô nghĩa.
       const merged = mergeDetections(
         [
           wide.map(d => ({ ...d, ...toFrameBox(d, 'contain', frameW, frameH) })),
@@ -238,9 +233,7 @@ export function DetectorScreen() {
     [onAlert, threshold],
   );
 
-  // --- Quét ảnh có sẵn trong thư viện ---
-  // Cùng model, cùng hai lượt, cùng phép gộp như ảnh chụp - chỉ khác chỗ lấy
-  // pixel: resizer chỉ nhận Frame của camera nên ảnh phải đi đường Skia.
+  // Quét ảnh thư viện: cùng model, cùng hai lượt, cùng phép gộp như ảnh chụp.
   const onPickPhoto = useCallback(
     async (uri: string) => {
       setPickerOpen(false);
@@ -271,8 +264,7 @@ export function DetectorScreen() {
       } catch (e) {
         console.warn('[DetectorScreen] quét ảnh từ thư viện thất bại', e);
         setScanning(false);
-        // Báo hẳn ra chứ không nuốt: bấm vào ảnh mà không có gì xảy ra thì
-        // người dùng chỉ biết là app hỏng.
+        // Báo hẳn ra: bấm vào ảnh mà không có gì xảy ra thì chỉ như app hỏng.
         Alert.alert('Không quét được ảnh', String(e));
       }
     },
@@ -286,8 +278,8 @@ export function DetectorScreen() {
     return () => clearTimeout(t);
   }, [scanning]);
 
-  // Box đang mở chi tiết mà bị ngưỡng hoặc bộ lọc class ẩn đi thì bảng chi tiết
-  // phải đóng theo, không thì nó trỏ vào thứ không còn trên màn.
+  // Box đang mở chi tiết mà bị ẩn đi thì bảng phải đóng theo, không thì nó trỏ
+  // vào thứ không còn trên màn.
   useEffect(() => {
     if (picked == null) return;
     if (!passesThreshold(picked, threshold) || hidden.has(picked.classId)) {
@@ -295,8 +287,7 @@ export function DetectorScreen() {
     }
   }, [picked, threshold, hidden]);
 
-  // Qua được ngưỡng - đây là tập mà hàng chip đếm, nên tắt một class không làm
-  // chip của nó biến mất khỏi danh sách.
+  // Tập mà hàng chip đếm: tắt một class không làm chip của nó biến mất.
   const scored = useMemo(
     () => result?.filter(d => passesThreshold(d, threshold)) ?? [],
     [result, threshold],
@@ -369,7 +360,6 @@ export function DetectorScreen() {
     d => d.classId === PERSON_CLASS_ID,
   ).length;
 
-  // Loại sẵn các mức vượt quá khả năng phóng của ống kính.
   const zoomSteps = ZOOM_STEPS.filter(z => z <= device.maxZoom);
 
   const pickedInfo: DetailInfo | null =
@@ -382,8 +372,8 @@ export function DetectorScreen() {
       : null;
 
   const reviewing = mode === 'frozen' && !scanning;
-  // Lúc xem ảnh chỉ còn thanh ngưỡng là có tác dụng; đèn/zoom/đổi camera thì
-  // không. Và khi bảng chi tiết đang mở thì nhường hẳn chỗ cho nó.
+  // Lúc xem ảnh chỉ còn thanh ngưỡng là có tác dụng, và bảng chi tiết mở thì
+  // nhường hẳn chỗ cho nó.
   const showTools = (mode === 'idle' || reviewing) && picked == null;
 
   return (
@@ -455,10 +445,8 @@ export function DetectorScreen() {
         }}
       />
 
-      {/* Ảnh chọn từ thư viện, đè hẳn lên canvas camera đã đóng băng.
-          Vẽ bằng chính SkImage đã đưa cho model, fit="cover" khớp đúng phép
-          quy toạ độ của boxToScreen - dùng <Image> của RN thì còn phải lo
-          chuyện EXIF xoay ảnh khác nhau giữa hai bên. */}
+      {/* Ảnh thư viện, đè lên canvas camera đã đóng băng. Vẽ bằng chính SkImage
+          đã đưa cho model để khỏi lệch EXIF; fit="cover" khớp boxToScreen. */}
       {photo != null && (
         <Canvas style={StyleSheet.absoluteFill}>
           <SkiaImage
@@ -472,7 +460,7 @@ export function DetectorScreen() {
         </Canvas>
       )}
 
-      {/* Chạm vào khung hình để lấy nét. Nằm dưới mọi nút nên không cướp chạm. */}
+      {/* Lấy nét. Nằm dưới mọi nút nên không cướp chạm của chúng. */}
       {mode === 'idle' && (
         <Pressable
           style={StyleSheet.absoluteFill}
@@ -505,7 +493,6 @@ export function DetectorScreen() {
         />
       )}
 
-      {/* Box vẽ đè lên ảnh đã đóng băng - đổi ngưỡng là hiện/ẩn ngay. */}
       {reviewing &&
         frameSize != null &&
         visible.map((d, i) => (
@@ -547,7 +534,6 @@ export function DetectorScreen() {
             reviewing && !landscape && styles.toolsReviewPortrait,
           ]}
         >
-          {/* Lọc theo loại vật thể - chỉ có nghĩa khi đã có kết quả. */}
           {reviewing && (
             <ClassFilter
               counts={classCounts}
@@ -605,7 +591,6 @@ export function DetectorScreen() {
         ]}
       >
         {reviewing ? (
-          // Xem ảnh: hàng icon gọn, nhường tối đa diện tích cho khung hình.
           <ReviewBar
             saveState={saveState}
             onRetake={() => {
@@ -619,8 +604,7 @@ export function DetectorScreen() {
             onSave={() => {
               // Ảnh thư viện thì lưu chính nó, ảnh chụp thì lấy từ canvas.
               const source = photo ?? camera.current?.takeSnapshot();
-              // Box trên màn là View, không nằm trong ảnh - phải nung vào pixel
-              // trước khi lưu, và chỉ nung đúng những box đang hiện.
+              // Chỉ nung vào pixel đúng những box đang hiện.
               save(
                 source != null && frameSize != null
                   ? annotate(source, visible, frameSize.w, frameSize.h)
@@ -688,7 +672,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#050505',
-    // Macro-whitespace: để bố cục thở, không nhồi sát mép.
     paddingHorizontal: 28,
     paddingVertical: 96,
   },
@@ -717,7 +700,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
 
-  // --- CTA với icon lồng trong vòng tròn riêng ---
+  // --- CTA ---
   cta: {
     flexDirection: 'row',
     alignItems: 'center',

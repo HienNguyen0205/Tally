@@ -15,22 +15,20 @@ export interface ScreenRect {
 /**
  * Ô vuông mà resizer đã ép khung hình vào trước khi đưa cho model.
  *
- * - `'contain'` (letterbox): cạnh ô vuông = cạnh DÀI của frame, phần thừa là
- *   viền đen. Giữ trọn khung hình.
- * - `'cover'`: cạnh ô vuông = cạnh NGẮN, cắt bớt hai đầu cạnh dài. Mất rìa
- *   nhưng phần giữa được dùng trọn 448px nên vật thể nhỏ rõ hơn hẳn.
+ * - `'contain'` (letterbox): cạnh = cạnh DÀI của frame, phần thừa là viền đen.
+ *   Giữ trọn khung hình.
+ * - `'cover'`: cạnh = cạnh NGẮN, cắt bớt hai đầu cạnh dài. Mất rìa nhưng phần
+ *   giữa được dùng trọn 448px nên vật thể nhỏ rõ hơn hẳn.
  */
 export type ScanSpace = 'contain' | 'cover';
 
 /**
  * Quy box từ ô vuông của model về hệ chuẩn hoá của FRAME (0..1).
  *
- * Model luôn trả toạ độ trong ô vuông nó nhìn thấy, không phải trong khung
- * hình. Hai lượt quét dùng hai ô vuông khác nhau nên phải quy về cùng một hệ
- * ngay tại đây - trước khi gộp, đo diện tích hay tính vùng chạm.
- *
- * Offset âm (`'contain'`) chính là viền đen phải trừ đi; offset dương
- * (`'cover'`) là phần khung hình đã bị cắt phải cộng lại.
+ * Hai lượt quét dùng hai ô vuông khác nhau nên phải quy về cùng một hệ ngay
+ * tại đây - trước khi gộp, đo diện tích hay tính vùng chạm. Offset âm
+ * (`'contain'`) là viền đen phải trừ, offset dương (`'cover'`) là phần khung
+ * đã bị cắt phải cộng lại.
  */
 export function toFrameBox(
   box: NormalizedBox,
@@ -56,13 +54,10 @@ export function toFrameBox(
 /**
  * Ô mà một ảnh phải được vẽ vào, bên trong ô vuông cạnh `modelSize` của model.
  *
- * Dùng cho đường quét ảnh có sẵn: ảnh trong thư viện không phải Frame nên
- * resizer không nhận, phải tự dựng input bằng Skia. Phép tính này là mặt trái
- * của {@link toFrameBox} và phải khớp chính xác cùng một quy ước ô vuông - lệch
- * là box sai mà không có lỗi nào báo, nên nó đứng riêng ở đây và có test.
- *
- * 'contain' thu cả ảnh vào trong ô (phần thừa để đen), 'cover' phóng cho tràn ô
- * rồi bị cắt - đúng hai chế độ của resizer.
+ * Dùng cho đường quét ảnh có sẵn, nơi phải tự dựng input bằng Skia vì resizer
+ * chỉ nhận Frame. Là mặt trái của {@link toFrameBox} và phải khớp chính xác
+ * cùng quy ước ô vuông - lệch là box sai mà không có lỗi nào báo, nên nó nằm
+ * cạnh đây và có test đối chiếu.
  */
 export function modelDestRect(
   imageW: number,

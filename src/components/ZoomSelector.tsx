@@ -28,9 +28,8 @@ export function ZoomSelector({ steps, value, onChange }: Props) {
   const startIndex = useRef(index);
   const dragging = useRef(false);
 
-  // Đồng bộ khi giá trị bị đổi từ bên ngoài (vd: reset về 1x). Phải nằm trong
-  // effect: đọc/ghi shared value giữa thân render là tác dụng phụ lúc React
-  // đang dựng cây. Bỏ qua khi đang kéo, không thì hai bên giành nhau con trỏ.
+  // Đồng bộ khi giá trị đổi từ bên ngoài (vd: reset về 1x). Trong effect chứ
+  // không giữa thân render, và bỏ qua khi đang kéo kẻo hai bên giành nhau.
   useEffect(() => {
     if (dragging.current) return;
     pos.value = withTiming(index, { duration: 420, easing: ease });
@@ -104,7 +103,6 @@ function ZoomLabel({
   active: boolean;
 }) {
   const on = useSharedValue(active ? 1 : 0);
-  // Ghi shared value phải nằm trong effect, không phải giữa thân render.
   useEffect(() => {
     on.value = withTiming(active ? 1 : 0, { duration: 320, easing: ease });
   }, [active, on]);

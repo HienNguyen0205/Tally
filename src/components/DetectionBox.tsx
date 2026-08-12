@@ -10,12 +10,9 @@ import type { ScreenRect } from '../boxLayout';
 const CHIP_H = 20;
 
 /**
- * Một box trên ảnh đã quét: viền màu, nhãn, và cũng chính là vùng chạm để mở
- * bảng chi tiết.
- *
- * Box được vẽ bằng View của RN chứ không nung vào ảnh, nhờ vậy đổi ngưỡng là
- * box hiện/ẩn ngay trên tấm ảnh đang xem. Lúc lưu file mới nung vào pixel, xem
- * `src/annotate.ts`.
+ * Một box trên ảnh đã quét: viền màu, nhãn, và cũng là vùng chạm để mở bảng
+ * chi tiết. Vẽ bằng View chứ không nung vào ảnh nên đổi ngưỡng là hiện/ẩn ngay;
+ * lúc lưu file mới nung vào pixel (`src/annotate.ts`).
  */
 export function DetectionBox({
   detection,

@@ -12,10 +12,8 @@ import { mergeDetections, type Detection } from './detections';
 import { parseDetections } from './runModel';
 
 /**
- * Ép ảnh vào ô vuông của model rồi đọc pixel ra dạng RGB uint8.
- *
- * Đây là bản làm bằng Skia của việc mà resizer làm cho frame camera - ảnh trong
- * thư viện không phải Frame nên resizer không nhận.
+ * Ép ảnh vào ô vuông của model rồi đọc pixel ra RGB uint8 - bản làm bằng Skia
+ * của việc resizer làm cho frame camera, vì resizer chỉ nhận Frame.
  */
 function toModelInput(image: SkImage, space: ScanSpace): Uint8Array | null {
   const w = image.width();
@@ -57,13 +55,10 @@ function toModelInput(image: SkImage, space: ScanSpace): Uint8Array | null {
 }
 
 /**
- * Quét một ảnh có sẵn, trả về detection đã ở hệ toạ độ của ảnh (0..1).
+ * Quét một ảnh có sẵn, trả về detection ở hệ toạ độ của ảnh (0..1).
  *
- * Chạy đúng hai lượt như đường camera rồi gộp bằng NMS, nên kết quả của ảnh
- * trong thư viện và của ảnh vừa chụp là so sánh được với nhau.
- *
- * Chạy trên JS thread - đây là thao tác một lần do người dùng bấm, không nằm
- * trên đường frame chạy liên tục.
+ * Chạy đúng hai lượt rồi gộp như đường camera. Nằm trên JS thread vì đây là
+ * thao tác một lần do người dùng bấm, không phải đường frame chạy liên tục.
  */
 export function scanImage(
   model: TensorflowModel,

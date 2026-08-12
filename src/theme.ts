@@ -1,7 +1,6 @@
 /**
- * Design tokens dùng chung cho toàn bộ HUD của camera.
- * Vibe: "Ethereal Glass" - nền OLED sâu, bề mặt trong mờ nhiều lớp,
- * viền tóc sáng thay cho border xám, không dùng đổ bóng đen thô.
+ * Design tokens của HUD: nền OLED sâu, bề mặt trong mờ nhiều lớp, viền tóc
+ * sáng thay cho border xám, không đổ bóng đen thô.
  */
 export const COLORS = {
   accent: '#00E676', // người
@@ -19,10 +18,7 @@ export const COLORS = {
   textFaint: 'rgba(245,246,247,0.28)',
 } as const;
 
-/**
- * Đường cong chuyển động chủ đạo - mô phỏng vật thể có khối lượng:
- * bật nhanh lúc đầu rồi giảm tốc rất dài. Không dùng linear/ease-in-out.
- */
+/** Bật nhanh rồi giảm tốc rất dài, như vật có khối lượng. */
 export const EASE_OUT_EXPO = [0.32, 0.72, 0, 1] as const;
 
 export const RADIUS = {

@@ -36,12 +36,9 @@ function toProgress(value: number): number {
 export function ThresholdSlider({ value, onChange }: Props) {
   const travel = TRACK_W - KNOB;
   const progress = useSharedValue(toProgress(value));
-  // Giá trị lúc bắt đầu kéo, để cộng dồn quãng đường ngón tay.
-  //
-  // Tính lại từ prop chứ KHÔNG đọc progress.value: đối số của useRef được ước
-  // lượng ở mọi lần render (dù chỉ lần đầu được dùng), mà đọc shared value giữa
-  // thân render đúng là thứ Reanimated cảnh báo. Dù sao onPanResponderGrant
-  // cũng ghi đè trước khi ai kịp dùng tới.
+  // Giá trị lúc bắt đầu kéo, để cộng dồn quãng đường ngón tay. Tính từ prop
+  // chứ KHÔNG đọc progress.value: đối số useRef chạy ở mọi lần render, mà đọc
+  // shared value giữa thân render đúng là thứ Reanimated cảnh báo.
   const startProgress = useRef(toProgress(value));
   const grabbed = useSharedValue(0);
 

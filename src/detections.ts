@@ -5,12 +5,7 @@ export interface Detection extends NormalizedBox {
   classId: number;
 }
 
-/**
- * Một ngưỡng cho mọi class, không ưu ái class nào.
- *
- * Từng thử hạ riêng ngưỡng cho các class không phải 'person' rồi bỏ: thanh
- * trượt ghi 90% mà vật thể 73% vẫn hiện thì con số hiển thị thành nói dối.
- */
+/** Một ngưỡng cho mọi class - xem lý do ở `SCORE_THRESHOLD`. */
 export function passesThreshold(d: Detection, threshold: number): boolean {
   return d.score >= threshold;
 }
@@ -31,14 +26,11 @@ export function iou(a: NormalizedBox, b: NormalizedBox): number {
 }
 
 /**
- * Gộp kết quả của nhiều lượt quét trên cùng một khung hình (NMS tham lam).
+ * Gộp kết quả nhiều lượt quét trên cùng một khung hình (NMS tham lam): xét từ
+ * điểm cao xuống, bỏ box chồng quá nhiều lên một box CÙNG CLASS đã giữ.
  *
- * Mọi box phải đã ở hệ frame - hai lượt nhìn hai ô vuông khác nhau nên so trực
- * tiếp toạ độ thô sẽ ra kết quả vô nghĩa.
- *
- * Xét từ điểm cao xuống thấp và bỏ box nào chồng quá nhiều lên một box CÙNG
- * CLASS đã giữ. Chỉ so trong cùng class: người bế con mèo là hai vật thể chồng
- * nhau hoàn toàn hợp lệ.
+ * Mọi box phải đã ở hệ frame, vì hai lượt nhìn hai ô vuông khác nhau. Chỉ so
+ * trong cùng class: người bế con mèo là hai vật thể chồng nhau hợp lệ.
  */
 export function mergeDetections(
   passes: Detection[][],

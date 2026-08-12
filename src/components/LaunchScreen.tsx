@@ -31,7 +31,7 @@ const STROKES = [
 ];
 const SLASH = 'M35 68 L72 40';
 
-/** Một nét, tự vẽ dần từ đầu tới cuối theo thứ tự index. */
+/** Một nét, tự vẽ dần theo thứ tự index. */
 function Stroke({
   d,
   index,
@@ -59,8 +59,7 @@ function Stroke({
     <Path
       path={path}
       style="stroke"
-      // Path vẽ theo lưới 108, canvas lớn hơn nên phải co giãn - chia ngược lại
-      // cho strokeWidth để nét không dày lên theo.
+      // Chia ngược cho SCALE để nét không dày lên theo phép co giãn canvas.
       strokeWidth={4.5 / SCALE}
       strokeCap="round"
       color={color}
@@ -73,9 +72,8 @@ function Stroke({
 }
 
 /**
- * Màn hình lúc mới mở app, trong khi model đang nạp.
- * Nền và logo trùng khớp với splash của hệ điều hành nên người dùng thấy như
- * một mạch liên tục chứ không phải hai màn hình nối nhau.
+ * Màn hình lúc model đang nạp. Nền và logo trùng splash của hệ điều hành nên
+ * nhìn như một mạch liên tục chứ không phải hai màn nối nhau.
  */
 export function LaunchScreen({ status }: { status: string }) {
   const draw = useSharedValue(0);

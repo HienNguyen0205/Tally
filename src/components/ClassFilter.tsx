@@ -21,19 +21,14 @@ export interface ClassCount {
 }
 
 /**
- * Bộ lọc theo loại vật thể, mặc định thu gọn thành một viên thuốc nhỏ.
+ * Bộ lọc theo loại vật thể: thu gọn thành viên thuốc tóm tắt, chạm mới bung ra
+ * bảng chip. Chip chỉ gồm những class có trong ảnh, không phải 90 class COCO.
  *
- * Ảnh vừa quét mới là thứ cần được nhìn, nên bộ lọc không chiếm sẵn một hàng
- * ngang màn hình: thu lại chỉ còn dòng tóm tắt, chạm mới bung ra bảng chip.
+ * Lọc ở đây là lọc hiển thị, giống thanh ngưỡng - model đã quét hết rồi.
  *
- * Bảng chip là một bề mặt RIÊNG nổi lên trên, không phải phần bung ra của viên
- * thuốc: nằm chung một bề mặt thì lúc đóng hàng chip vẫn kéo giãn bề ngang, thu
- * gọn xong vẫn còn rộng nguyên. Tách ra thì mỗi lớp tự ôm lấy nội dung của nó.
- *
- * Chip dựng từ đúng những class có trong ảnh - không phải 90 class của COCO, vì
- * 85 class còn lại không liên quan gì tới tấm ảnh đang xem. Lọc ở đây chỉ là
- * lọc hiển thị, giống thanh ngưỡng: model đã quét hết rồi, tắt chip nào thì box
- * của class đó ẩn đi và không còn được đếm.
+ * Bảng chip là bề mặt RIÊNG nổi lên trên chứ không nằm chung với viên thuốc:
+ * chung một bề mặt thì lúc đóng, hàng chip vẫn kéo giãn bề ngang nên thu gọn
+ * xong vẫn rộng nguyên.
  */
 export function ClassFilter({
   counts,
@@ -77,8 +72,6 @@ export function ClassFilter({
       {open && (
         <Animated.View style={panelStyle}>
           <GlassSurface contentStyle={styles.panelCore}>
-            {/* Xuống dòng thay vì cuộn ngang: một ảnh thường chỉ có vài loại,
-                thấy hết một lượt vẫn hơn phải lướt đi tìm. */}
             <View style={styles.row}>
               {counts.map(({ classId, count }) => {
                 const off = hidden.has(classId);
@@ -149,8 +142,7 @@ export function ClassFilter({
 }
 
 const styles = StyleSheet.create({
-  // Chặn bề ngang ở đây: bảng chip nhiều loại thì xuống dòng chứ không tràn ra
-  // ngoài mép màn hình. Viên thuốc tóm tắt tự canh giữa theo bảng.
+  // Chặn bề ngang ở đây để chip xuống dòng thay vì tràn ra mép màn hình.
   wrap: { alignItems: 'center', gap: 8, maxWidth: '92%' },
 
   headerCore: { paddingHorizontal: 6, paddingVertical: 4 },
@@ -178,8 +170,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 11,
     borderRadius: 999,
     backgroundColor: 'rgba(255,255,255,0.10)',
-    // Chip ôm trọn tên của nó. Hết chỗ thì cả chip xuống dòng - flexShrink của
-    // RN mặc định là 0 nên không có chuyện bị bóp lại rồi cắt chữ thành "...".
+    // Ôm trọn tên; hết chỗ thì cả chip xuống dòng chứ không bị bóp rồi cắt
+    // chữ thành "...".
     flexShrink: 0,
   },
   chipOff: { backgroundColor: 'transparent' },

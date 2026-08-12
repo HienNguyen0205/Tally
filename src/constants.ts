@@ -11,22 +11,15 @@ export const MODEL_SIZE = 448;
 // nên trần thực tế sau khi gộp là 50.
 export const MAX_DETECTIONS = 25;
 
-// Ngưỡng mặc định, áp CHUNG cho mọi class.
-//
-// Đã thử hạ riêng ngưỡng cho các class không phải 'person' (chúng ghi điểm thấp
-// hơn hẳn ở cùng chất lượng phát hiện) nhưng bỏ đi: thanh trượt ghi 90% mà vật
-// thể 73% vẫn hiện thì con số trên màn hình thành nói dối. Một núm thì phải chỉ
-// có một nghĩa - thấy sót vật thể thì kéo thanh xuống, đúng việc của nó.
-//
-// 0.5 thay vì 0.6 như hồi chỉ đếm người: 0.6 vốn chọn riêng cho 'person', để
-// nguyên thì các class khác bị vứt oan ngay từ mặc định.
+// Ngưỡng mặc định, áp chung cho mọi class. Đã thử hạ riêng cho class không phải
+// 'person' rồi bỏ: thanh trượt ghi 90% mà vật thể 73% vẫn hiện là nói dối.
+// 0.5 chứ không phải 0.6 như hồi chỉ đếm người - 0.6 chọn riêng cho 'person'.
 export const SCORE_THRESHOLD = 0.5;
 
-// Sàn cứng lúc đọc output. Việc lọc thật do JS lo để thanh ngưỡng đổi được ngay
-// trên ảnh đã chụp, nên sàn này chỉ để cắt rác - phải thấp hơn mức nhỏ nhất mà
-// thanh trượt có thể đặt (0.2).
+// Sàn cứng lúc đọc output, chỉ để cắt rác. Lọc thật do JS lo nên sàn phải thấp
+// hơn mức nhỏ nhất thanh trượt đặt được (0.2).
 export const RAW_SCORE_FLOOR = 0.05;
 
-// Hai lượt quét nhìn cùng một cảnh nên vật thể ở giữa khung thường bị bắt hai
-// lần. Trên ngưỡng chồng lấn này thì coi là một, giữ lại bản điểm cao hơn.
+// Hai lượt quét cùng nhìn một cảnh nên vật thể giữa khung hay bị bắt hai lần.
+// Chồng quá mức này thì coi là một, giữ bản điểm cao hơn.
 export const NMS_IOU = 0.55;
