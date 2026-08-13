@@ -2,11 +2,20 @@
 export const PERSON_CLASS_ID = 0;
 
 // Kích thước input, đọc từ metadata (imgsz) và xác nhận bằng shape tensor vào:
-// [1, 3, 640, 640] float32 - NCHW nên resizer phải để pixelLayout 'planar'.
+// [1, 3, 640, 640] float32 - NCHW nên resizer để pixelLayout 'planar'.
 export const MODEL_SIZE = 640;
 
 // Số class của model. Sai số này thì việc tách box/score trong output lệch hết.
 export const NUM_CLASSES = 80;
+
+// Ô vuông của model phân loại (yolo26n-cls, `imgsz` trong metadata của nó).
+// Bản export này để 640 chứ không phải 224 như mặc định của Ultralytics.
+export const CLASSIFY_SIZE = 640;
+
+// Dưới mức này thì model đang đoán mò - thà không hiện tên chi tiết còn hơn
+// hiện một cái sai. Đo trên máy: crop người ra "sarong 6%", crop thuyền ra tên
+// đúng với điểm cao hơn hẳn.
+export const MIN_REFINED_SCORE = 0.2;
 
 // YOLO26 xuất với end2end=false: NMS KHÔNG nằm trong graph, output là 8400
 // anchor thô. Nên trần này là lựa chọn của ta, không phải giới hạn của model -

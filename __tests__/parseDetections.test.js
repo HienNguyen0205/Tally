@@ -8,11 +8,12 @@ const {
 const CHANNELS = NUM_CLASSES + 4;
 
 /**
- * Dựng một output giả đúng bố cục [1, 84, N] của YOLO: xếp theo KÊNH, nên giá
- * trị kênh c tại anchor a nằm ở `c * N + a`.
+ * Dựng output giả đúng bố cục [1, 84, N] của bản export không end2end: xếp theo
+ * KÊNH, nên giá trị kênh c tại anchor a nằm ở `c * N + a`.
  *
- * Đảo nhầm sang `a * 84 + c` là lỗi không có thông báo nào - box vẫn ra, chỉ là
- * ra sai chỗ - nên phải khoá bằng test.
+ * Đảo nhầm sang `a * 84 + c` là lỗi không có thông báo nào - box vẫn ra, chỉ ra
+ * sai chỗ - nên phải khoá bằng test. Bản export CÓ end2end lại cho ra
+ * `[1, 300, 6]` hoàn toàn khác; kiểm shape trước khi đổi model.
  */
 function buildOutput(anchors, boxes) {
   const out = new Float32Array(CHANNELS * anchors);
@@ -30,7 +31,7 @@ function buildOutput(anchors, boxes) {
   return [out.buffer];
 }
 
-describe('giải mã output YOLO', () => {
+describe('giải mã output anchor thô', () => {
   it('đọc đúng ô theo bố cục kênh và đổi tâm+kích thước thành hai góc', () => {
     const found = parseDetections(
       buildOutput(10, [

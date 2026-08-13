@@ -9,14 +9,18 @@ import type { Detection } from './detections';
  * Đọc output thô của YOLO26 thành danh sách detection. Toạ độ ở hệ ô vuông
  * model nhìn thấy, chưa quy về khung hình - xem `toFrameBox`.
  *
- * Shape output là [1, 84, 8400], đọc trực tiếp từ file .tflite:
+ * Model xuất với `end2end: false` nên output là `[1, 84, 8400]`:
  *   84 = 4 (cx, cy, w, h) + 80 điểm class
  *   8400 = 80² + 40² + 20² anchor của ba tầng stride
- * Xếp theo kênh nên giá trị của kênh c tại anchor a nằm ở `c * anchors + a`,
- * KHÔNG phải `a * 84 + c`. Đảo hai cái này thì không có lỗi nào báo.
+ * Xếp theo kênh, nên giá trị kênh `c` tại anchor `a` nằm ở `c * anchors + a`,
+ * KHÔNG phải `a * 84 + c`. Đảo hai cái này thì box vẫn ra, chỉ sai chỗ.
  *
- * Toạ độ đã chuẩn hoá 0..1 sẵn (graph bọc trong `_NormalizeCoords`), và điểm
- * class đã qua sigmoid - không phải hậu xử lý gì thêm ngoài NMS.
+ * Toạ độ đã chuẩn hoá 0..1 sẵn (graph bọc trong `_NormalizeCoords`) và điểm
+ * class đã qua sigmoid, nên hậu xử lý chỉ còn NMS - do `mergeDetections` lo.
+ *
+ * Bản export CÓ end2end thì output thành `[1, 300, 6]`, mỗi hàng hai góc + điểm
+ * + class và đã NMS sẵn. Hai định dạng không liên quan gì nhau, mà nhầm thì
+ * không có lỗi nào báo - kiểm bằng `tools/inspect_tflite.py` trước khi đổi.
  *
  * Đánh dấu 'worklet' vì đường camera gọi trong worklet, đường quét ảnh gọi
  * thẳng trên JS thread.
@@ -57,7 +61,7 @@ export function parseDetections(outputs: readonly ArrayBuffer[]): Detection[] {
     });
   }
 
-  // Không có NMS trong graph nên số box thô có thể rất lớn; NMS lại là O(n²).
+  // Không có NMS trong graph nên số box thô có thể rất lớn, mà NMS là O(n²).
   // Cắt bớt theo điểm trước khi đưa sang gộp.
   found.sort((x, y) => y.score - x.score);
   return found.length > MAX_DETECTIONS ? found.slice(0, MAX_DETECTIONS) : found;

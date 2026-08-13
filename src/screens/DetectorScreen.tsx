@@ -56,7 +56,7 @@ import { ThresholdSlider } from '../components/ThresholdSlider';
 import { ZoomSelector } from '../components/ZoomSelector';
 import { ReviewBar } from '../components/ReviewBar';
 import { LaunchScreen } from '../components/LaunchScreen';
-import { DetailSheet, type DetailInfo } from '../components/DetailSheet';
+import { DetailSheet } from '../components/DetailSheet';
 import { DetectionBox } from '../components/DetectionBox';
 import { ClassFilter } from '../components/ClassFilter';
 import { PhotoPicker, loadImageData } from '../components/PhotoPicker';
@@ -68,6 +68,7 @@ import {
 } from '../detections';
 import { readFrameDetections } from '../runModel';
 import { scanImage } from '../scanImage';
+import { classifyCrop, type Refined } from '../classify';
 import { annotate } from '../annotate';
 import { COLORS, EASE_OUT_EXPO, FONT, RADIUS } from '../theme';
 
@@ -77,6 +78,10 @@ type Mode = 'idle' | 'capturing' | 'frozen';
 
 // Animation quét hiển thị thêm sau khi ảnh đã đóng băng, để thấy được là đang quét.
 const SCAN_ANIM_MS = 900;
+
+// Đợi bảng chi tiết bung ra xong rồi mới phân loại. Dài hơn animation của
+// DetailSheet (520ms + 120ms trễ của hàng số liệu) một nhịp.
+const REFINE_DELAY_MS = 700;
 
 const pressEase = Easing.bezier(...EASE_OUT_EXPO);
 
@@ -154,6 +159,9 @@ export function DetectorScreen() {
 
   const [mode, setMode] = useState<Mode>('idle');
   const [scanning, setScanning] = useState(false);
+  // Đường quét ảnh thư viện mất thời gian thật, không như đường camera vốn đã
+  // có kết quả sẵn lúc báo về. Cờ này giữ animation chạy tới khi quét xong.
+  const [scanBusy, setScanBusy] = useState(false);
   const [result, setResult] = useState<Detection[] | null>(null);
   const [frameSize, setFrameSize] = useState<{ w: number; h: number } | null>(
     null,
@@ -164,6 +172,9 @@ export function DetectorScreen() {
   // Khác null = đang xem ảnh thư viện chứ không phải ảnh vừa chụp.
   const [photo, setPhoto] = useState<SkImage | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  // Tên chi tiết của box đang mở, do model phân loại đoán.
+  const [refined, setRefined] = useState<Refined | null>(null);
+  const [refining, setRefining] = useState(false);
 
   // --- Điều khiển camera ---
   const [facing, setFacing] = useState<'back' | 'front'>('back');
@@ -213,6 +224,15 @@ export function DetectorScreen() {
   );
   const model =
     objectDetection.state === 'loaded' ? objectDetection.model : undefined;
+
+  // Model phân loại chỉ dùng khi người dùng chạm vào một box, nên hỏng thì chỉ
+  // mất phần tên chi tiết - đừng để nó chặn cả app như model phát hiện.
+  const classifier = useTensorflowModel(
+    require('../../assets/models/yolo26n-cls.tflite'),
+    delegates,
+  );
+  const clsModel =
+    classifier.state === 'loaded' ? classifier.model : undefined;
 
   // Shape/kiểu tensor thật mà runtime thấy - đối chiếu với assets/models/README.md
   // mỗi khi đổi model, vì sai chỗ này không có lỗi nào báo.
@@ -286,21 +306,31 @@ export function DetectorScreen() {
       setPickerOpen(false);
       if (model == null) return;
 
-      setScanning(true);
+      setScanBusy(true);
       try {
+        // Giải mã trước, chưa bật animation: lúc này chưa có gì để quét cả, mà
+        // phủ animation lên camera preview thì người dùng tưởng đang quét cảnh
+        // trước mặt chứ không phải ảnh vừa chọn.
         const image = Skia.Image.MakeImageFromEncoded(await loadImageData(uri));
         if (image == null) throw new Error('không giải mã được ảnh');
 
-        const found = scanImage(model, image);
-        if (found == null) throw new Error('không dựng được surface xử lý ảnh');
-
         setPhoto(image);
         setFrameSize({ w: image.width(), h: image.height() });
-        setResult(found);
+        setResult(null);
         setHidden(new Set());
         setPicked(null);
         resetSave();
         setMode('frozen');
+        setScanning(true);
+
+        // Nhường một khung hình cho React vẽ ảnh ra trước. Không có dòng này
+        // thì phần dựng input (Skia + vòng lặp pixel) chạy ngay trong cùng một
+        // nhịp và animation lại hiện lên trước khi thấy ảnh.
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+
+        const found = await scanImage(model, image);
+        if (found == null) throw new Error('không dựng được surface xử lý ảnh');
+        setResult(found);
 
         const people = found.filter(
           d => d.classId === PERSON_CLASS_ID && passesThreshold(d, threshold),
@@ -308,20 +338,25 @@ export function DetectorScreen() {
         if (people > 0) onAlert(people);
       } catch (e) {
         console.warn('[DetectorScreen] quét ảnh từ thư viện thất bại', e);
-        setScanning(false);
+        setPhoto(null);
+        setMode('idle');
         // Báo hẳn ra: bấm vào ảnh mà không có gì xảy ra thì chỉ như app hỏng.
         Alert.alert('Không quét được ảnh', String(e));
+      } finally {
+        setScanBusy(false);
+        setScanning(false);
       }
     },
     [model, threshold, onAlert, resetSave],
   );
 
-  // Animation quét chạy thêm một lúc để người dùng kịp thấy phản hồi.
+  // Animation quét chạy thêm một lúc để người dùng kịp thấy phản hồi. Bỏ qua
+  // khi đang có việc thật chạy - lúc đó chính công việc quyết định độ dài.
   useEffect(() => {
-    if (!scanning) return;
+    if (!scanning || scanBusy) return;
     const t = setTimeout(() => setScanning(false), SCAN_ANIM_MS);
     return () => clearTimeout(t);
-  }, [scanning]);
+  }, [scanning, scanBusy]);
 
   // Box đang mở chi tiết mà bị ẩn đi thì bảng phải đóng theo, không thì nó trỏ
   // vào thứ không còn trên màn.
@@ -331,6 +366,56 @@ export function DetectorScreen() {
       setPicked(null);
     }
   }, [picked, threshold, hidden]);
+
+  // Gọi tên chi tiết cho box đang mở: COCO chỉ có 80 loại thô, model phân loại
+  // có 1000. Chỉ chạy khi người dùng chạm nên không tốn gì lúc quét.
+  useEffect(() => {
+    setRefined(null);
+    if (picked == null || clsModel == null || frameSize == null) return;
+    // ImageNet-1k KHÔNG có class nào là người, nên crop người chỉ có thể ra tên
+    // một món quần áo hoặc bối cảnh. Đừng hỏi câu mà model không trả lời được.
+    if (picked.classId === PERSON_CLASS_ID) return;
+
+    let cancelled = false;
+    setRefining(true);
+
+    // Hoãn tới khi bảng chi tiết vào chỗ xong. Việc dựng input cho model là
+    // ĐỒNG BỘ và nặng - đọc 640² pixel rồi tách kênh - nên chạy ngay lúc này
+    // thì nó chẹn JS thread đúng lúc bảng đang bung ra, nhìn thấy giật ngay.
+    const start = setTimeout(() => {
+      // Cùng nguồn ảnh với lúc lưu: ảnh thư viện, hoặc ảnh đóng băng trên canvas.
+      const source = photo ?? camera.current?.takeSnapshot();
+      if (source == null) {
+        setRefining(false);
+        return;
+      }
+
+      classifyCrop(
+        clsModel,
+        source,
+        // Box đang ở hệ frame, phải quy về pixel của chính tấm ảnh nguồn.
+        boxToScreen(
+          picked,
+          frameSize.w,
+          frameSize.h,
+          source.width(),
+          source.height(),
+        ),
+      )
+        .then(r => {
+          if (!cancelled) setRefined(r);
+        })
+        .catch(e => console.warn('[DetectorScreen] không phân loại được', e))
+        .finally(() => {
+          if (!cancelled) setRefining(false);
+        });
+    }, REFINE_DELAY_MS);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(start);
+    };
+  }, [picked, clsModel, photo, frameSize]);
 
   // Tập mà hàng chip đếm: tắt một class không làm chip của nó biến mất.
   const scored = useMemo(
@@ -411,15 +496,6 @@ export function DetectorScreen() {
   ).length;
 
   const zoomSteps = ZOOM_STEPS.filter(z => z <= device.maxZoom);
-
-  const pickedInfo: DetailInfo | null =
-    picked != null
-      ? {
-          classId: picked.classId,
-          score: picked.score,
-          areaRatio: (picked.xmax - picked.xmin) * (picked.ymax - picked.ymin),
-        }
-      : null;
 
   const reviewing = mode === 'frozen' && !scanning;
   // Lúc xem ảnh chỉ còn thanh ngưỡng là có tác dụng, và bảng chi tiết mở thì
@@ -564,17 +640,21 @@ export function DetectorScreen() {
               : styles.detailAnchorPortrait,
           ]}
         >
-          <DetailSheet info={pickedInfo!} onClose={() => setPicked(null)} />
+          <DetailSheet
+            classId={picked.classId}
+            score={picked.score}
+            refined={refined}
+            refining={refining}
+            onClose={() => setPicked(null)}
+          />
         </View>
       )}
 
       {scanning && <ScanOverlay />}
 
-      <ResultIsland
-        peopleCount={peopleCount}
-        objectCount={visible.length}
-        hasResult={result != null}
-      />
+      {result != null && (
+        <ResultIsland peopleCount={peopleCount} objectCount={visible.length} />
+      )}
 
       {showTools && (
         <View
@@ -663,43 +743,39 @@ export function DetectorScreen() {
             }}
           />
         ) : (
-          <>
-            <Text style={styles.controlHint}>Chạm để quét</Text>
-
-            <Animated.View style={shutterStyle}>
-              <Pressable
-                style={styles.shutterShell}
-                disabled={scanning}
-                accessibilityRole="button"
-                accessibilityLabel="Chụp và quét"
-                onPressIn={() => {
-                  press.value = withTiming(1, {
-                    duration: 180,
-                    easing: pressEase,
-                  });
-                }}
-                onPressOut={() => {
-                  press.value = withTiming(0, {
-                    duration: 420,
-                    easing: pressEase,
-                  });
-                }}
-                onPress={() => {
-                  setScanning(true);
-                  setMode('capturing');
-                }}
-              >
-                <View style={styles.shutterRing}>
-                  <View
-                    style={[
-                      styles.shutterCore,
-                      scanning && styles.shutterCoreBusy,
-                    ]}
-                  />
-                </View>
-              </Pressable>
-            </Animated.View>
-          </>
+          <Animated.View style={shutterStyle}>
+            <Pressable
+              style={styles.shutterShell}
+              disabled={scanning}
+              accessibilityRole="button"
+              accessibilityLabel="Chụp và quét"
+              onPressIn={() => {
+                press.value = withTiming(1, {
+                  duration: 180,
+                  easing: pressEase,
+                });
+              }}
+              onPressOut={() => {
+                press.value = withTiming(0, {
+                  duration: 420,
+                  easing: pressEase,
+                });
+              }}
+              onPress={() => {
+                setScanning(true);
+                setMode('capturing');
+              }}
+            >
+              <View style={styles.shutterRing}>
+                <View
+                  style={[
+                    styles.shutterCore,
+                    scanning && styles.shutterCoreBusy,
+                  ]}
+                />
+              </View>
+            </Pressable>
+          </Animated.View>
         )}
       </View>
 
@@ -802,22 +878,10 @@ const styles = StyleSheet.create({
     position: 'absolute',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 16,
   },
   controlsPortrait: { bottom: 54, left: 0, right: 0 },
   // Nằm ngang: nút chụp về cạnh phải, ngang tầm ngón cái khi cầm hai tay.
   controlsLandscape: { right: 40, top: 0, bottom: 0 },
-  controlHint: {
-    // Chữ nổi trực tiếp trên khung hình nên phải tự lo tương phản: nền camera
-    // có thể sáng trắng, để màu mờ như các nhãn nằm trong thẻ kính là mất chữ.
-    color: 'rgba(255,255,255,0.88)',
-    fontFamily: FONT.medium,
-    fontSize: 10,
-    letterSpacing: 2,
-    textShadowColor: 'rgba(0,0,0,0.55)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
-  },
   shutterShell: {
     width: 86,
     height: 86,

@@ -14,17 +14,15 @@ import { GlassSurface } from './GlassSurface';
 interface Props {
   peopleCount: number;
   objectCount: number;
-  /** false = chưa chụp lần nào, hiện gợi ý thay vì số 0 gây hiểu nhầm. */
-  hasResult: boolean;
 }
 
 const ease = Easing.bezier(...EASE_OUT_EXPO);
 
 /**
- * Bảng kết quả nổi ở đỉnh màn hình, thu lại thành viên thuốc khi chưa quét và
- * nở ra thành thẻ số liệu sau khi quét xong.
+ * Bảng kết quả nổi ở đỉnh màn hình. Chỉ dựng khi đã có kết quả - lúc chưa quét
+ * thì không có gì để nói, và khung hình đáng được nhìn hơn một dòng gợi ý.
  */
-export function ResultIsland({ peopleCount, objectCount, hasResult }: Props) {
+export function ResultIsland({ peopleCount, objectCount }: Props) {
   const { width, height } = useWindowDimensions();
   // Nằm ngang: dạt sang trái để không đụng nút chụp đã chuyển sang cạnh phải.
   const landscape = width > height;
@@ -40,7 +38,7 @@ export function ResultIsland({ peopleCount, objectCount, hasResult }: Props) {
       140,
       withTiming(1, { duration: 720, easing: ease }),
     );
-  }, [hasResult, peopleCount, objectCount, reveal, stagger]);
+  }, [peopleCount, objectCount, reveal, stagger]);
 
   // Chỉ animate transform/opacity - không đụng width/height để khỏi reflow.
   const shellStyle = useAnimatedStyle(() => ({
@@ -65,31 +63,20 @@ export function ResultIsland({ peopleCount, objectCount, hasResult }: Props) {
     >
       <Animated.View style={shellStyle}>
         <GlassSurface pill contentStyle={styles.corePill}>
-          {!hasResult ? (
-            <>
-              <View style={styles.idleDot} />
-              <Text style={styles.idleText}>Bấm nút chụp để quét</Text>
-            </>
-          ) : (
-            <>
-              <View
-                style={[
-                  styles.statusDot,
-                  {
-                    backgroundColor: present ? COLORS.accent : COLORS.textFaint,
-                  },
-                ]}
-              />
-              <Text style={styles.count}>{peopleCount}</Text>
-              <Text style={styles.unit}>người</Text>
+          <View
+            style={[
+              styles.statusDot,
+              { backgroundColor: present ? COLORS.accent : COLORS.textFaint },
+            ]}
+          />
+          <Text style={styles.count}>{peopleCount}</Text>
+          <Text style={styles.unit}>người</Text>
 
-              <Animated.View style={[styles.tail, staggerStyle]}>
-                <View style={styles.dividerV} />
-                <Text style={styles.objects}>{objectCount}</Text>
-                <Text style={styles.unit}>vật thể</Text>
-              </Animated.View>
-            </>
-          )}
+          <Animated.View style={[styles.tail, staggerStyle]}>
+            <View style={styles.dividerV} />
+            <Text style={styles.objects}>{objectCount}</Text>
+            <Text style={styles.unit}>vật thể</Text>
+          </Animated.View>
         </GlassSurface>
       </Animated.View>
     </View>
@@ -117,19 +104,6 @@ const styles = StyleSheet.create({
     gap: 7,
     paddingVertical: 10,
     paddingHorizontal: 16,
-  },
-
-  idleDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: COLORS.accent,
-  },
-  idleText: {
-    color: COLORS.textPrimary,
-    fontFamily: FONT.medium,
-    fontSize: 13,
-    letterSpacing: 0.2,
   },
 
   statusDot: { width: 7, height: 7, borderRadius: 3.5 },

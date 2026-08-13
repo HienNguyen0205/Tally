@@ -18,14 +18,17 @@ else in amber. Everything runs on the device — no image ever leaves the phone.
   the `frozen` state and stops rendering so the frozen image stays pinned to the
   detections that came from it.
 - **YOLO26n (COCO, 80 classes)** — `[1, 3, 640, 640]` float32 NCHW input, raw
-  `[1, 84, 8400]` head. People are stroked green, other objects amber.
+  `[1, 84, 8400]` head with no NMS in the graph. People are stroked green, other
+  objects amber.
 - **Two-pass detection.** Each scan runs the model twice on the same frame: once
   letterboxed (`scaleMode: 'contain'`, full field of view) and once centre-cropped
   (`'cover'`, which spends all 640px on the middle of the frame instead of 44% of
   it on black bars). The two passes are mapped into frame space and merged with
   greedy NMS — so edge objects survive and small central objects get found. The
   model exports with `end2end: false`, meaning no NMS in the graph, so that same
-  merge step is what turns 8400 raw anchors per pass into final detections.
+  merge step is what turns 8400 raw anchors per pass into final detections —
+  and what keeps the threshold slider meaningful, since nothing is discarded
+  before the app sees it.
 - **Live threshold on the captured photo.** Boxes are React Native views layered
   over the frozen image rather than baked into it, so dragging the threshold
   re-filters the photo you are already looking at — no re-capture. Boxes are only
@@ -41,7 +44,11 @@ else in amber. Everything runs on the device — no image ever leaves the phone.
   through the same model, the same two passes and the same merge as a live capture.
   The resizer only accepts camera `Frame`s, so this path builds the model input
   with Skia instead — see [src/scanImage.ts](src/scanImage.ts).
-- **Tap any box for details**: Vietnamese class label, confidence and area ratio.
+- **Tap any box for details**: Vietnamese class label, confidence and area ratio —
+  plus a finer name from a second model. COCO only knows 80 coarse classes, so a
+  tapped crop goes through YOLO26n-cls (1000 ImageNet classes) and the sheet shows
+  what it found: a boat becomes "gondola". It runs on tap only, never during a
+  scan, and stays silent when it isn't confident.
 - Camera controls: torch, front/back flip, 1×/2×/3×/5× zoom steps (steps beyond
   `device.maxZoom` are dropped automatically), tap-to-focus, and a confidence
   threshold slider (default `0.6`).
@@ -211,7 +218,9 @@ quietly wrong results:
   of different classes both kept)
 - [`__tests__/parseDetections.test.js`](__tests__/parseDetections.test.js) — the
   raw YOLO head decode, above all the channel-major indexing (`c * 8400 + a`, not
-  `a * 84 + c`): transpose those and boxes still appear, just in the wrong places
+  `a * 84 + c`): transpose those and boxes still appear, just in the wrong places.
+  An end2end export hands back `[1, 300, 6]` instead — a completely different
+  shape that fails silently
 
 Linting:
 
@@ -228,9 +237,11 @@ ObjectDetector/
   src/
     annotate.ts        # Burn boxes into the photo at save time (offscreen Skia)
     boxLayout.ts       # Coordinate mapping: model square → frame → screen
+    classify.ts        # Second-stage: crop a box, name it from 1000 ImageNet classes
     constants.ts       # MODEL_SIZE, PERSON_CLASS_ID, thresholds, NMS IoU
-    detections.ts      # Detection type, per-class thresholds, IoU, NMS merge
-    labels.ts          # The 90 COCO labels + Vietnamese translations
+    detections.ts      # Detection type, IoU, NMS merge
+    imagenetLabels.ts  # The 1000 ImageNet labels (generated from the model's metadata)
+    labels.ts          # The 80 COCO labels + Vietnamese translations
     runModel.ts        # Model output parsing, shared by the camera and photo paths
     scanImage.ts       # Scan a library photo: Skia-built model input, both passes
     theme.ts           # Colours, fonts, radii, easing curves
@@ -267,6 +278,17 @@ ObjectDetector/
   therefore go through `loadImageData()`: `fetch` + `FileReader` for
   `content://`, and `CameraRoll.iosGetImageDataById(uri, { convertHeicImages:
   true })` for `ph://` (which also converts HEIC, the iPhone default, to JPEG).
+- **Pixel layout depends on how the model was exported, not on which model it is.**
+  Both bundled models were exported with Ultralytics 8.4.118, whose litert-torch
+  path emits NCHW — their `serving_default_*` tensor names give that away, and it
+  is why `renderToInput` can serve both. The ready-made downloads on the
+  Ultralytics site come from the older ONNX→TF path and are NHWC instead. Feed a
+  model the wrong layout and it still runs and still returns numbers, just
+  meaningless ones.
+- **ImageNet-1k contains no person class**, so classifying a person crop can only
+  ever return a garment or a backdrop — measured on device: "sarong" at 6%. The
+  refine step therefore skips `person` outright and drops anything under
+  `MIN_REFINED_SCORE`; a wrong confident-looking name is worse than no name.
 - **Never write a Reanimated shared value in a render body.** Strict mode warns
   about it, and the fix is always an effect keyed on the prop that drives the
   animation. Reading `.value` during render counts too.
