@@ -12,10 +12,12 @@ import { mergeDetections, type Detection } from './detections';
 import { parseDetections } from './runModel';
 
 /**
- * Ép ảnh vào ô vuông của model rồi đọc pixel ra RGB uint8 - bản làm bằng Skia
- * của việc resizer làm cho frame camera, vì resizer chỉ nhận Frame.
+ * Ép ảnh vào ô vuông của model rồi đọc pixel ra - bản làm bằng Skia của việc
+ * resizer làm cho frame camera, vì resizer chỉ nhận Frame.
+ *
+ * Phải khớp đúng định dạng RESIZER_FORMAT: float32 0..1, xếp planar (NCHW).
  */
-function toModelInput(image: SkImage, space: ScanSpace): Uint8Array | null {
+function toModelInput(image: SkImage, space: ScanSpace): Float32Array | null {
   const w = image.width();
   const h = image.height();
 
@@ -43,15 +45,17 @@ function toModelInput(image: SkImage, space: ScanSpace): Uint8Array | null {
   });
   if (pixels == null) return null;
 
-  // Model ăn RGB 3 kênh, Skia chỉ đọc ra được 4 kênh - bỏ kênh alpha.
+  // Skia chỉ đọc ra được RGBA 4 kênh: bỏ alpha, chia 255 về 0..1, và tách
+  // thành ba mặt phẳng R/G/B liền nhau thay vì xen kẽ từng pixel.
   const rgba = pixels as Uint8Array;
-  const rgb = new Uint8Array(MODEL_SIZE * MODEL_SIZE * 3);
-  for (let i = 0, j = 0; i < rgb.length; i += 3, j += 4) {
-    rgb[i] = rgba[j]!;
-    rgb[i + 1] = rgba[j + 1]!;
-    rgb[i + 2] = rgba[j + 2]!;
+  const plane = MODEL_SIZE * MODEL_SIZE;
+  const chw = new Float32Array(plane * 3);
+  for (let p = 0, j = 0; p < plane; p++, j += 4) {
+    chw[p] = rgba[j]! / 255;
+    chw[plane + p] = rgba[j + 1]! / 255;
+    chw[2 * plane + p] = rgba[j + 2]! / 255;
   }
-  return rgb;
+  return chw;
 }
 
 /**

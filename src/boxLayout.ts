@@ -18,7 +18,7 @@ export interface ScreenRect {
  * - `'contain'` (letterbox): cạnh = cạnh DÀI của frame, phần thừa là viền đen.
  *   Giữ trọn khung hình.
  * - `'cover'`: cạnh = cạnh NGẮN, cắt bớt hai đầu cạnh dài. Mất rìa nhưng phần
- *   giữa được dùng trọn 448px nên vật thể nhỏ rõ hơn hẳn.
+ *   giữa được dùng trọn cạnh ô vuông nên vật thể nhỏ rõ hơn hẳn.
  */
 export type ScanSpace = 'contain' | 'cover';
 

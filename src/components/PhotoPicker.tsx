@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraRoll } from '@react-native-camera-roll/camera-roll';
+import { Skia, type SkData } from '@shopify/react-native-skia';
 
 import { COLORS, FONT } from '../theme';
 
@@ -24,6 +25,11 @@ const GAP = 2;
 /**
  * Android 13 tách quyền đọc ảnh ra khỏi quyền đọc bộ nhớ chung; máy cũ hơn vẫn
  * phải xin READ_EXTERNAL_STORAGE. iOS để Photos framework tự hỏi lúc truy cập.
+ *
+ * Từ Android 14 người dùng có thể chỉ cho xem MỘT SỐ ảnh. Khi đó hệ thống vẫn
+ * báo READ_MEDIA_IMAGES là "granted" (cờ REVOKED_COMPAT, để code cũ khỏi vỡ)
+ * nhưng `getPhotos` chỉ trả về đúng những ảnh đã chọn - có thể là không ảnh
+ * nào. Gọi lại hàm này sẽ mở lại bảng chọn để thêm ảnh.
  */
 async function ensurePhotoPermission(): Promise<boolean> {
   if (Platform.OS !== 'android') return true;
@@ -52,21 +58,39 @@ function displayUri(image: { uri: string; filepath: string | null }): string {
 }
 
 /**
- * Đường dẫn để QUÉT - phải là file thật vì Skia không hiểu 'ph://'. Trên iOS
- * nhờ Photos ghi ra file tạm, tiện thể chuyển HEIC (mặc định của iPhone, Skia
- * không giải mã được) sang JPEG.
+ * Đọc byte của ảnh đã chọn thành `SkData` để đưa cho Skia.
+ *
+ * `Skia.Data.fromURI` chỉ nạp được file/URL thật, mà picker lại trả về định
+ * danh của kho ảnh hệ thống - và tệ hơn là nó **treo im lặng** với những URI đó
+ * chứ không báo lỗi. Nên phải quy về byte trước:
+ *
+ * - Android: `content://…` đọc bằng `fetch` (tầng mạng của RN hiểu scheme này,
+ *   cùng cơ chế giúp <Image> hiển thị được ảnh trong lưới).
+ * - iOS: `ph://<id>` là định danh Photos, nhờ camera-roll ghi ra file tạm,
+ *   tiện thể chuyển HEIC (mặc định của iPhone) sang JPEG.
  */
-export async function toScanUri(uri: string): Promise<string> {
-  if (!uri.startsWith('ph://')) return uri;
-
-  const asset = await CameraRoll.iosGetImageDataById(uri, {
-    convertHeicImages: true,
-  });
-  const path = asset.node.image.filepath;
-  if (path == null || path === '') {
-    throw new Error('không lấy được đường dẫn file của ảnh');
+export async function loadImageData(uri: string): Promise<SkData> {
+  if (uri.startsWith('ph://')) {
+    const asset = await CameraRoll.iosGetImageDataById(uri, {
+      convertHeicImages: true,
+    });
+    const path = asset.node.image.filepath;
+    if (path == null || path === '') {
+      throw new Error('không lấy được đường dẫn file của ảnh');
+    }
+    return Skia.Data.fromURI(asFileUri(path));
   }
-  return asFileUri(path);
+
+  if (!uri.startsWith('content://')) return Skia.Data.fromURI(uri);
+
+  const blob = await (await fetch(uri)).blob();
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error('không đọc được ảnh đã chọn'));
+    reader.readAsDataURL(blob);
+  });
+  return Skia.Data.fromBase64(dataUrl.slice(dataUrl.indexOf(',') + 1));
 }
 
 /** Lưới ảnh gần đây để chọn một tấm đem đi quét. */
@@ -81,6 +105,8 @@ export function PhotoPicker({
   const insets = useSafeAreaInsets();
 
   const [uris, setUris] = useState<string[] | null>(null);
+  // Android 14+: người dùng chỉ cho xem một số ảnh, không phải cả thư viện.
+  const [limited, setLimited] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const cell = Math.floor((width - GAP * (COLUMNS - 1)) / COLUMNS);
@@ -96,6 +122,7 @@ export function PhotoPicker({
         assetType: 'Photos',
       });
       setUris(page.edges.map(e => displayUri(e.node.image)));
+      setLimited(page.limited === true);
     } catch (e) {
       console.warn('[PhotoPicker] không đọc được thư viện ảnh', e);
       setError('Không đọc được thư viện ảnh.');
@@ -126,6 +153,16 @@ export function PhotoPicker({
           </Pressable>
         </View>
 
+        {/* Chỉ được xem một phần thư viện: phải có lối mở lại bảng chọn, không
+            thì người dùng kẹt hẳn khi lỡ không chọn ảnh nào. */}
+        {limited && uris != null && uris.length > 0 && (
+          <Pressable style={styles.notice} onPress={load}>
+            <Text style={styles.noticeText}>
+              Chỉ thấy {uris.length} ảnh bạn đã cho phép · Chọn thêm
+            </Text>
+          </Pressable>
+        )}
+
         {error != null ? (
           <View style={styles.center}>
             <Text style={styles.message}>{error}</Text>
@@ -136,7 +173,16 @@ export function PhotoPicker({
           </View>
         ) : uris.length === 0 ? (
           <View style={styles.center}>
-            <Text style={styles.message}>Thư viện chưa có ảnh nào.</Text>
+            <Text style={styles.message}>
+              {limited
+                ? 'Bạn chưa cho ứng dụng xem ảnh nào.'
+                : 'Thư viện chưa có ảnh nào.'}
+            </Text>
+            {limited && (
+              <Pressable style={styles.cta} onPress={load}>
+                <Text style={styles.ctaText}>Chọn ảnh cho phép</Text>
+              </Pressable>
+            )}
           </View>
         ) : (
           <FlatList
@@ -180,7 +226,33 @@ const styles = StyleSheet.create({
     letterSpacing: -0.3,
   },
   close: { color: COLORS.textMuted, fontFamily: FONT.medium, fontSize: 16 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 28 },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 28,
+    gap: 20,
+  },
+  notice: {
+    marginHorizontal: 20,
+    marginBottom: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  noticeText: {
+    color: COLORS.textPrimary,
+    fontFamily: FONT.medium,
+    fontSize: 12,
+  },
+  cta: {
+    backgroundColor: COLORS.accent,
+    borderRadius: 999,
+    paddingVertical: 11,
+    paddingHorizontal: 22,
+  },
+  ctaText: { color: '#04120A', fontFamily: FONT.semibold, fontSize: 14 },
   message: {
     color: COLORS.textMuted,
     fontFamily: FONT.regular,

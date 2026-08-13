@@ -1,15 +1,17 @@
-// Xác nhận bằng labelmap.txt trong metadata của model (bước 7 hướng dẫn):
-// dòng đầu tiên là 'person' → index 0.
+// Nhãn đầu tiên trong metadata.json của model là 'person'.
 export const PERSON_CLASS_ID = 0;
 
-// Kích thước input của model. EfficientDet-Lite2 dùng 448 (lite0 là 320).
-// Xác nhận bằng model.inputs lúc chạy: shape [1, 448, 448, 3] uint8.
-export const MODEL_SIZE = 448;
+// Kích thước input, đọc từ metadata (imgsz) và xác nhận bằng shape tensor vào:
+// [1, 3, 640, 640] float32 - NCHW nên resizer phải để pixelLayout 'planar'.
+export const MODEL_SIZE = 640;
 
-// Model tự giới hạn tối đa 25 detection mỗi lần (shape output [1, 25, 4]).
-// Đây là trần CỦA MỘT LƯỢT, không phải của một lần quét: quét chạy hai lượt
-// nên trần thực tế sau khi gộp là 50.
-export const MAX_DETECTIONS = 25;
+// Số class của model. Sai số này thì việc tách box/score trong output lệch hết.
+export const NUM_CLASSES = 80;
+
+// YOLO26 xuất với end2end=false: NMS KHÔNG nằm trong graph, output là 8400
+// anchor thô. Nên trần này là lựa chọn của ta, không phải giới hạn của model -
+// giữ lại bấy nhiêu box điểm cao nhất mỗi lượt trước khi chạy NMS.
+export const MAX_DETECTIONS = 100;
 
 // Ngưỡng mặc định, áp chung cho mọi class. Đã thử hạ riêng cho class không phải
 // 'person' rồi bỏ: thanh trượt ghi 90% mà vật thể 73% vẫn hiện là nói dối.

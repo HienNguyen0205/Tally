@@ -2,43 +2,65 @@ import type { Frame } from 'react-native-vision-camera';
 import type { Resizer } from 'react-native-vision-camera-resizer';
 import type { TensorflowModel } from 'react-native-fast-tflite';
 
-import { MAX_DETECTIONS, RAW_SCORE_FLOOR } from './constants';
+import { MAX_DETECTIONS, NUM_CLASSES, RAW_SCORE_FLOOR } from './constants';
 import type { Detection } from './detections';
 
 /**
- * Đọc output thô của model thành danh sách detection. Toạ độ vẫn ở hệ ô vuông
+ * Đọc output thô của YOLO26 thành danh sách detection. Toạ độ ở hệ ô vuông
  * model nhìn thấy, chưa quy về khung hình - xem `toFrameBox`.
  *
- * Chỉ áp sàn cứng; ngưỡng thật do JS lọc lúc hiển thị để kéo thanh ngưỡng là
- * đổi ngay trên ảnh đã chụp. Đánh dấu 'worklet' vì đường camera gọi trong
- * worklet, đường quét ảnh gọi thẳng trên JS thread.
+ * Shape output là [1, 84, 8400], đọc trực tiếp từ file .tflite:
+ *   84 = 4 (cx, cy, w, h) + 80 điểm class
+ *   8400 = 80² + 40² + 20² anchor của ba tầng stride
+ * Xếp theo kênh nên giá trị của kênh c tại anchor a nằm ở `c * anchors + a`,
+ * KHÔNG phải `a * 84 + c`. Đảo hai cái này thì không có lỗi nào báo.
+ *
+ * Toạ độ đã chuẩn hoá 0..1 sẵn (graph bọc trong `_NormalizeCoords`), và điểm
+ * class đã qua sigmoid - không phải hậu xử lý gì thêm ngoài NMS.
+ *
+ * Đánh dấu 'worklet' vì đường camera gọi trong worklet, đường quét ảnh gọi
+ * thẳng trên JS thread.
  */
 export function parseDetections(outputs: readonly ArrayBuffer[]): Detection[] {
   'worklet';
 
-  // Thứ tự output đã kiểm chứng bằng model.outputs của lite2:
-  //   [0] [1,25,4] boxes | [1] [1,25] classes
-  //   [2] [1,25] scores  | [3] [1] số lượng
-  // Đổi model khác thì phải log lại model.outputs để xác nhận.
-  const boxes = new Float32Array(outputs[0]!);
-  const classes = new Float32Array(outputs[1]!);
-  const scores = new Float32Array(outputs[2]!);
-  const numDetections = new Float32Array(outputs[3]!);
-  const detCount = Math.min(Number(numDetections[0]), MAX_DETECTIONS);
+  const out = new Float32Array(outputs[0]!);
+  const anchors = out.length / (NUM_CLASSES + 4);
 
   const found: Detection[] = [];
-  for (let i = 0; i < detCount; i++) {
-    if (Number(scores[i]) < RAW_SCORE_FLOOR) continue;
+  for (let a = 0; a < anchors; a++) {
+    // Tìm class điểm cao nhất của anchor này.
+    let best = -1;
+    let bestScore = RAW_SCORE_FLOOR;
+    for (let c = 0; c < NUM_CLASSES; c++) {
+      const score = out[(4 + c) * anchors + a]!;
+      if (score > bestScore) {
+        bestScore = score;
+        best = c;
+      }
+    }
+    if (best < 0) continue;
+
+    // Box của YOLO là tâm + kích thước, không phải hai góc.
+    const cx = out[a]!;
+    const cy = out[anchors + a]!;
+    const w = out[2 * anchors + a]!;
+    const h = out[3 * anchors + a]!;
+
     found.push({
-      ymin: boxes[i * 4]!,
-      xmin: boxes[i * 4 + 1]!,
-      ymax: boxes[i * 4 + 2]!,
-      xmax: boxes[i * 4 + 3]!,
-      score: scores[i]!,
-      classId: Number(classes[i]),
+      xmin: cx - w / 2,
+      ymin: cy - h / 2,
+      xmax: cx + w / 2,
+      ymax: cy + h / 2,
+      score: bestScore,
+      classId: best,
     });
   }
-  return found;
+
+  // Không có NMS trong graph nên số box thô có thể rất lớn; NMS lại là O(n²).
+  // Cắt bớt theo điểm trước khi đưa sang gộp.
+  found.sort((x, y) => y.score - x.score);
+  return found.length > MAX_DETECTIONS ? found.slice(0, MAX_DETECTIONS) : found;
 }
 
 /** Chạy model một lượt trên frame của camera (gọi trong worklet). */
@@ -50,8 +72,24 @@ export function readFrameDetections(
   'worklet';
 
   const resized = resizer.resize(frame);
-  const outputs = model.runSync([resized.getPixelBuffer()]);
-  resized.dispose();
+  const buffer = resized.getPixelBuffer();
+
+  let outputs: ArrayBuffer[];
+  try {
+    outputs = model.runSync([buffer]);
+  } catch (e) {
+    // "Failed to run TFLite Model" một mình không nói được gì. Kèm luôn ba số
+    // liệu quyết định: cỡ buffer đưa vào, cỡ model đòi, và delegate đang bật.
+    throw new Error(
+      `${String(e)} | buffer ${buffer.byteLength}B` +
+        ` | inputs ${JSON.stringify(model.inputs)}` +
+        ` | delegates ${JSON.stringify(model.delegates)}`,
+    );
+  } finally {
+    // Phải dispose kể cả khi hỏng: resizer từ chối chạy tiếp nếu GPUFrame
+    // trước đó còn treo.
+    resized.dispose();
+  }
 
   return parseDetections(outputs);
 }

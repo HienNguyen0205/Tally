@@ -1,7 +1,9 @@
 /**
- * Nhãn 90 class của COCO 2017, trích từ metadata của model:
- *   assets/models/metadata_extract/labelmap.txt
- * Index trong mảng = classId model trả về ('???' là class trống của COCO).
+ * Nhãn 80 class COCO của YOLO, trích từ metadata.json trong file .tflite.
+ * Index trong mảng = classId model trả về.
+ *
+ * KHÁC danh sách 90 class của EfficientDet: YOLO đánh số liên tục, không có
+ * ô trống '???'. Dùng nhầm bảng thì mọi class trừ 'person' đều sai tên.
  */
 export const COCO_LABELS = [
   'person',
@@ -15,7 +17,6 @@ export const COCO_LABELS = [
   'boat',
   'traffic light',
   'fire hydrant',
-  '???',
   'stop sign',
   'parking meter',
   'bench',
@@ -29,11 +30,8 @@ export const COCO_LABELS = [
   'bear',
   'zebra',
   'giraffe',
-  '???',
   'backpack',
   'umbrella',
-  '???',
-  '???',
   'handbag',
   'tie',
   'suitcase',
@@ -48,7 +46,6 @@ export const COCO_LABELS = [
   'surfboard',
   'tennis racket',
   'bottle',
-  '???',
   'wine glass',
   'cup',
   'fork',
@@ -69,12 +66,8 @@ export const COCO_LABELS = [
   'couch',
   'potted plant',
   'bed',
-  '???',
   'dining table',
-  '???',
-  '???',
   'toilet',
-  '???',
   'tv',
   'laptop',
   'mouse',
@@ -86,7 +79,6 @@ export const COCO_LABELS = [
   'toaster',
   'sink',
   'refrigerator',
-  '???',
   'book',
   'clock',
   'vase',
@@ -96,10 +88,6 @@ export const COCO_LABELS = [
   'toothbrush',
 ];
 
-/**
- * Tên tiếng Việt, dùng ở bảng chi tiết khi chạm vào box. Box vẽ trên ảnh vẫn
- * giữ tên gốc cho ngắn gọn (chữ vẽ trên khung hình phải thật cô đọng).
- */
 const VI: Record<string, string> = {
   person: 'người',
   bicycle: 'xe đạp',

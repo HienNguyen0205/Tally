@@ -1,12 +1,15 @@
 # Tally — ObjectDetector
 
 A React Native app that detects and counts objects in the camera frame. Press the
-shutter and the app scans **exactly one frame** with EfficientDet-Lite2 running on
-TFLite on-device, freezes that frame, and lays labelled bounding boxes over it so
-you can inspect, re-filter and save the result.
+shutter and the app scans **exactly one frame** with YOLO26n running on TFLite
+on-device, freezes that frame, and lays labelled bounding boxes over it so you can
+inspect, re-filter and save the result.
 
-It recognises all 90 COCO classes, with people highlighted in green and everything
+It recognises all 80 COCO classes, with people highlighted in green and everything
 else in amber. Everything runs on the device — no image ever leaves the phone.
+
+> The bundled model is Ultralytics YOLO26n, licensed **AGPL-3.0**. Review the terms
+> (or obtain a commercial licence) before shipping a closed-source build.
 
 ## Features
 
@@ -14,14 +17,15 @@ else in amber. Everything runs on the device — no image ever leaves the phone.
   model on exactly the next frame after the shutter is pressed, then switches to
   the `frozen` state and stops rendering so the frozen image stays pinned to the
   detections that came from it.
-- **EfficientDet-Lite2 (COCO 2017, 90 classes)** — `[1, 448, 448, 3]` uint8 input.
-  People are stroked green, other objects amber.
+- **YOLO26n (COCO, 80 classes)** — `[1, 3, 640, 640]` float32 NCHW input, raw
+  `[1, 84, 8400]` head. People are stroked green, other objects amber.
 - **Two-pass detection.** Each scan runs the model twice on the same frame: once
   letterboxed (`scaleMode: 'contain'`, full field of view) and once centre-cropped
-  (`'cover'`, which spends all 448px on the middle of the frame instead of 44% of
+  (`'cover'`, which spends all 640px on the middle of the frame instead of 44% of
   it on black bars). The two passes are mapped into frame space and merged with
-  greedy NMS — so edge objects survive, small central objects get found, and the
-  model's hard 25-detection-per-pass ceiling becomes 50.
+  greedy NMS — so edge objects survive and small central objects get found. The
+  model exports with `end2end: false`, meaning no NMS in the graph, so that same
+  merge step is what turns 8400 raw anchors per pass into final detections.
 - **Live threshold on the captured photo.** Boxes are React Native views layered
   over the frozen image rather than baked into it, so dragging the threshold
   re-filters the photo you are already looking at — no re-capture. Boxes are only
@@ -176,7 +180,7 @@ instead of the screen's, which is what paints the boxes into the saved JPEG
 ([src/annotate.ts](src/annotate.ts)).
 
 Scanning a library photo reaches the same place by a different route. There is no
-`Frame` and therefore no resizer, so `scanImage.ts` draws the image into a 448×448
+`Frame` and therefore no resizer, so `scanImage.ts` draws the image into a 640×640
 offscreen Skia surface itself and reads the pixels back. That hand-built placement
 has to agree exactly with what `toFrameBox` assumes about the square, which is why
 it lives in `boxLayout.ts` as `modelDestRect` next to its counterpart, with a test
@@ -202,9 +206,12 @@ quietly wrong results:
   aligned with the camera path
 - [`__tests__/boxLayout.test.js`](__tests__/boxLayout.test.js) — `boxToScreen()`,
   plus one end-to-end pass through both conversions
-- [`__tests__/detections.test.js`](__tests__/detections.test.js) — per-class
-  thresholds and NMS merging (same object deduped, single-pass objects kept,
-  overlapping objects of different classes both kept)
+- [`__tests__/detections.test.js`](__tests__/detections.test.js) — thresholds and
+  NMS merging (same object deduped, single-pass objects kept, overlapping objects
+  of different classes both kept)
+- [`__tests__/parseDetections.test.js`](__tests__/parseDetections.test.js) — the
+  raw YOLO head decode, above all the channel-major indexing (`c * 8400 + a`, not
+  `a * 84 + c`): transpose those and boxes still appear, just in the wrong places
 
 Linting:
 
@@ -232,7 +239,7 @@ ObjectDetector/
     screens/           # DetectorScreen: camera, scan worklet, the whole HUD
   assets/
     fonts/             # Geist (SIL OFL), linked with react-native-asset
-    models/            # efficientdet_lite2.tflite + extracted metadata
+    models/            # yolo26n.tflite + notes on its verified tensor layout
   __tests__/           # Box coordinate tests
   patches/             # patch-package patch for react-native-fast-tflite
   android/             # Android project (bare workflow)
@@ -252,13 +259,14 @@ ObjectDetector/
 - **Zoom and torch may only be set after `onStarted`.** Setting them earlier makes
   CameraX throw `Camera is not active`; the `OperationCanceledException` raised
   while the camera session restarts is harmless and is swallowed deliberately.
-- **A picked photo's URI is not always a file.** Android's `CameraRoll` returns
-  `file://…`, which Skia loads directly, but iOS returns `ph://<localIdentifier>`
-  — a Photos framework handle. React Native's `<Image>` resolves it (camera-roll
-  installs a request handler for that scheme) so the picker grid renders either
-  way, but Skia cannot, so scanning routes iOS URIs through
-  `CameraRoll.iosGetImageDataById(uri, { convertHeicImages: true })` first, which
-  writes a temp file — and converts HEIC, the iPhone default, to JPEG on the way.
+- **A picked photo's URI is never a plain file**, on either platform: Android
+  returns `content://media/…` and iOS returns `ph://<localIdentifier>`. React
+  Native's `<Image>` resolves both, so the picker grid renders fine — but
+  `Skia.Data.fromURI` handles neither, and on Android it **hangs without ever
+  rejecting**, so the scan silently does nothing and no error is logged. Bytes
+  therefore go through `loadImageData()`: `fetch` + `FileReader` for
+  `content://`, and `CameraRoll.iosGetImageDataById(uri, { convertHeicImages:
+  true })` for `ph://` (which also converts HEIC, the iPhone default, to JPEG).
 - **Never write a Reanimated shared value in a render body.** Strict mode warns
   about it, and the fix is always an effect keyed on the prop that drives the
   animation. Reading `.value` during render counts too.

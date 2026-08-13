@@ -59,7 +59,7 @@ import { LaunchScreen } from '../components/LaunchScreen';
 import { DetailSheet, type DetailInfo } from '../components/DetailSheet';
 import { DetectionBox } from '../components/DetectionBox';
 import { ClassFilter } from '../components/ClassFilter';
-import { PhotoPicker, toScanUri } from '../components/PhotoPicker';
+import { PhotoPicker, loadImageData } from '../components/PhotoPicker';
 import { boxToScreen, toFrameBox } from '../boxLayout';
 import {
   mergeDetections,
@@ -83,18 +83,27 @@ const pressEase = Easing.bezier(...EASE_OUT_EXPO);
 // Các mức zoom quen thuộc; mức nào vượt quá khả năng máy sẽ tự bị loại bỏ.
 const ZOOM_STEPS = [1, 2, 3, 5];
 
-// 'android-gpu' chỉ tồn tại trên Android - trên nền tảng khác nó ném lỗi ngay
-// lúc nạp model, nên đừng buồn thử.
+// GPU delegate CHƯA được kiểm chứng với model này: đã tắt lúc truy lỗi Invoke,
+// mà thủ phạm hoá ra là file model (buffer offset - xem assets/models/README.md)
+// chứ không phải delegate. Cứ để tắt cho tới khi có ai đo thật.
+//
+// Đổi thành true để thử. Lưu ý phần lùi về CPU bên dưới chỉ bắt lỗi lúc NẠP,
+// không bắt lỗi lúc chạy. 'android-gpu' chỉ có trên Android, nền tảng khác ném
+// lỗi ngay lúc nạp nên đừng buồn thử.
+const TRY_GPU = false;
 const PREFERRED_DELEGATES: TensorflowModelDelegate[] =
-  Platform.OS === 'android' ? ['android-gpu'] : [];
+  TRY_GPU && Platform.OS === 'android' ? ['android-gpu'] : [];
 const CPU_ONLY: TensorflowModelDelegate[] = [];
 
+// Khớp đúng tensor vào của model: [1, 3, 640, 640] float32.
+// 'planar' vì shape là NCHW (kênh đứng trước), 'float32' vì resizer xuất giá
+// trị 0..1 - đúng thang YOLO cần.
 const RESIZER_FORMAT = {
   width: MODEL_SIZE,
   height: MODEL_SIZE,
   channelOrder: 'rgb',
-  dataType: 'uint8',
-  pixelLayout: 'interleaved',
+  dataType: 'float32',
+  pixelLayout: 'planar',
 } as const;
 
 /** Màn hình trạng thái (xin quyền, đang nạp, lỗi) - thẻ nổi 2 lớp. */
@@ -191,18 +200,28 @@ export function DetectorScreen() {
   // --- Nạp model ---
   // Thử GPU trước rồi lùi về CPU nếu không được.
   //
-  // Model này là uint8 quantized, mà GPU delegate của TFLite tối ưu cho float32
-  // và hỗ trợ quantized rất không đều - đo trên máy thật rồi hẵng tin. Con số
-  // cần đo giờ là ĐỘ TRỄ MỘT LẦN QUÉT (2 lượt suy luận), không phải FPS như hồi
-  // app còn chạy nhận diện liên tục.
-  const [delegates, setDelegates] =
-    useState<TensorflowModelDelegate[]>(PREFERRED_DELEGATES);
+  // Suy ra từ hằng số mỗi lần render chứ không giữ trong state: đối số useState
+  // chỉ chạy lúc mount, mà Fast Refresh lại giữ nguyên state - sửa
+  // PREFERRED_DELEGATES sẽ không có tác dụng cho tới khi khởi động lại app.
+  const [gpuFailed, setGpuFailed] = useState(false);
+  const delegates: TensorflowModelDelegate[] = gpuFailed
+    ? CPU_ONLY
+    : PREFERRED_DELEGATES;
   const objectDetection = useTensorflowModel(
-    require('../../assets/models/efficientdet_lite2.tflite'),
+    require('../../assets/models/yolo26n.tflite'),
     delegates,
   );
   const model =
     objectDetection.state === 'loaded' ? objectDetection.model : undefined;
+
+  // Shape/kiểu tensor thật mà runtime thấy - đối chiếu với assets/models/README.md
+  // mỗi khi đổi model, vì sai chỗ này không có lỗi nào báo.
+  useEffect(() => {
+    if (model == null) return;
+    console.log('[model] inputs', JSON.stringify(model.inputs));
+    console.log('[model] outputs', JSON.stringify(model.outputs));
+    console.log('[model] delegates', JSON.stringify(model.delegates));
+  }, [model]);
 
   // TFLite KHÔNG tự lùi về CPU: máy không dựng được GPU delegate thì hỏng luôn
   // ở bước tạo interpreter. Không bắt ở đây thì app chết hẳn trên đúng những
@@ -213,14 +232,14 @@ export function DetectorScreen() {
         '[DetectorScreen] không dùng được GPU delegate, lùi về CPU',
         objectDetection.error,
       );
-      setDelegates(CPU_ONLY);
+      setGpuFailed(true);
     }
   }, [objectDetection, delegates]);
 
   // --- Hai lượt quét, hai cách ép frame vào ô vuông của model ---
   // Khung dọc 16:9 nhét vào ô vuông thì 44% bề ngang input là viền đen, vật thể
   // nhỏ teo còn vài chục pixel và trượt. Nên chạy thêm lượt 'cover' dùng trọn
-  // 448px cho phần giữa khung, rồi gộp: không mất rìa mà vẫn thấy vật thể nhỏ.
+  // 640px cho phần giữa khung, rồi gộp: không mất rìa mà vẫn thấy vật thể nhỏ.
   // Cũng là cách nâng trần 25 detection/lượt lên 50.
   const { resizer: wideResizer, error: wideError } = useResizer({
     ...RESIZER_FORMAT,
@@ -269,9 +288,7 @@ export function DetectorScreen() {
 
       setScanning(true);
       try {
-        // iOS phải đổi 'ph://' thành file tạm trước; Android đã là file sẵn.
-        const data = await Skia.Data.fromURI(await toScanUri(uri));
-        const image = Skia.Image.MakeImageFromEncoded(data);
+        const image = Skia.Image.MakeImageFromEncoded(await loadImageData(uri));
         if (image == null) throw new Error('không giải mã được ảnh');
 
         const found = scanImage(model, image);
