@@ -7,6 +7,7 @@ import React, {
 } from 'react';
 import {
   Alert,
+  Platform,
   View,
   Text,
   StyleSheet,
@@ -31,7 +32,10 @@ import {
   Skia,
   type SkImage,
 } from '@shopify/react-native-skia';
-import { useTensorflowModel } from 'react-native-fast-tflite';
+import {
+  useTensorflowModel,
+  type TensorflowModelDelegate,
+} from 'react-native-fast-tflite';
 import { useResizer } from 'react-native-vision-camera-resizer';
 import { createSynchronizable, scheduleOnRN } from 'react-native-worklets';
 
@@ -78,6 +82,12 @@ const pressEase = Easing.bezier(...EASE_OUT_EXPO);
 
 // Các mức zoom quen thuộc; mức nào vượt quá khả năng máy sẽ tự bị loại bỏ.
 const ZOOM_STEPS = [1, 2, 3, 5];
+
+// 'android-gpu' chỉ tồn tại trên Android - trên nền tảng khác nó ném lỗi ngay
+// lúc nạp model, nên đừng buồn thử.
+const PREFERRED_DELEGATES: TensorflowModelDelegate[] =
+  Platform.OS === 'android' ? ['android-gpu'] : [];
+const CPU_ONLY: TensorflowModelDelegate[] = [];
 
 const RESIZER_FORMAT = {
   width: MODEL_SIZE,
@@ -179,15 +189,33 @@ export function DetectorScreen() {
   }, [mode, scanCmd]);
 
   // --- Nạp model ---
-  // ponytail: GPU delegate ('android-gpu') đã thử nhưng làm FPS tệ hơn trên
-  // Tecno POVA 6 Neo - GPU delegate của TFLite hỗ trợ kém với model
-  // quantized uint8 trên nhiều chip tầm trung. Dùng CPU mặc định.
+  // Thử GPU trước rồi lùi về CPU nếu không được.
+  //
+  // Model này là uint8 quantized, mà GPU delegate của TFLite tối ưu cho float32
+  // và hỗ trợ quantized rất không đều - đo trên máy thật rồi hẵng tin. Con số
+  // cần đo giờ là ĐỘ TRỄ MỘT LẦN QUÉT (2 lượt suy luận), không phải FPS như hồi
+  // app còn chạy nhận diện liên tục.
+  const [delegates, setDelegates] =
+    useState<TensorflowModelDelegate[]>(PREFERRED_DELEGATES);
   const objectDetection = useTensorflowModel(
     require('../../assets/models/efficientdet_lite2.tflite'),
-    [],
+    delegates,
   );
   const model =
     objectDetection.state === 'loaded' ? objectDetection.model : undefined;
+
+  // TFLite KHÔNG tự lùi về CPU: máy không dựng được GPU delegate thì hỏng luôn
+  // ở bước tạo interpreter. Không bắt ở đây thì app chết hẳn trên đúng những
+  // máy đó - mà chúng vẫn cài được vì thư viện khai required="false".
+  useEffect(() => {
+    if (objectDetection.state === 'error' && delegates.length > 0) {
+      console.warn(
+        '[DetectorScreen] không dùng được GPU delegate, lùi về CPU',
+        objectDetection.error,
+      );
+      setDelegates(CPU_ONLY);
+    }
+  }, [objectDetection, delegates]);
 
   // --- Hai lượt quét, hai cách ép frame vào ô vuông của model ---
   // Khung dọc 16:9 nhét vào ô vuông thì 44% bề ngang input là viền đen, vật thể
@@ -332,7 +360,12 @@ export function DetectorScreen() {
     );
   }
 
-  if (objectDetection.state === 'loading') {
+  // Lỗi lúc còn delegate GPU chỉ là bước trung gian - effect bên trên đang nạp
+  // lại bằng CPU, đừng chớp màn hình lỗi ra rồi thu về ngay.
+  if (
+    objectDetection.state === 'loading' ||
+    (objectDetection.state === 'error' && delegates.length > 0)
+  ) {
     return <LaunchScreen status="Đang nạp mô hình" />;
   }
 
