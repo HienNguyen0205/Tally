@@ -1,7 +1,7 @@
 import React from 'react';
 import { Canvas, Path, Skia, type SkPath } from '@shopify/react-native-skia';
 
-import { COLORS } from '../theme';
+import { COLORS } from '../shared/theme';
 
 /**
  * Icon vector nét mảnh vẽ bằng Skia thay cho chữ hoặc font icon.

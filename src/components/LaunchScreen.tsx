@@ -12,7 +12,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { COLORS, EASE_OUT_EXPO, FONT } from '../theme';
+import { COLORS, EASE_OUT_EXPO, FONT } from '../shared/theme';
 
 const ease = Easing.bezier(...EASE_OUT_EXPO);
 const SIZE = 132;

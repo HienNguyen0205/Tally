@@ -43,7 +43,7 @@ else in amber. Everything runs on the device — no image ever leaves the phone.
 - **Scan an existing photo.** Pick an image from the device library and it goes
   through the same model, the same two passes and the same merge as a live capture.
   The resizer only accepts camera `Frame`s, so this path builds the model input
-  with Skia instead — see [src/scanImage.ts](src/scanImage.ts).
+  with Skia instead — see [src/detection/scanImage.ts](src/detection/scanImage.ts).
 - **Tap any box for details**: Vietnamese class label, confidence and area ratio —
   plus a finer name from a second model. COCO only knows 80 coarse classes, so a
   tapped crop goes through YOLO26n-cls (1000 ImageNet classes) and the sheet shows
@@ -177,14 +177,14 @@ knows which pass a box came from), then frame space → screen pixels (`boxToScr
 which undoes the canvas's `fit="cover"`):
 
 ```ts
-// src/boxLayout.ts
+// src/shared/boxLayout.ts
 const r = boxToScreen(detection, frameSize.w, frameSize.h, winW, winH);
 // → { left, top, width, height } in screen pixels
 ```
 
 The same `boxToScreen` runs again at save time against the snapshot's dimensions
 instead of the screen's, which is what paints the boxes into the saved JPEG
-([src/annotate.ts](src/annotate.ts)).
+([src/detection/annotate.ts](src/detection/annotate.ts)).
 
 Scanning a library photo reaches the same place by a different route. There is no
 `Frame` and therefore no resizer, so `scanImage.ts` draws the image into a 640×640
@@ -235,16 +235,19 @@ ObjectDetector/
   App.tsx              # App root: SafeAreaProvider + translucent status bar
   index.js             # React Native entry point
   src/
-    annotate.ts        # Burn boxes into the photo at save time (offscreen Skia)
-    boxLayout.ts       # Coordinate mapping: model square → frame → screen
-    classify.ts        # Second-stage: crop a box, name it from 1000 ImageNet classes
-    constants.ts       # MODEL_SIZE, PERSON_CLASS_ID, thresholds, NMS IoU
-    detections.ts      # Detection type, IoU, NMS merge
-    imagenetLabels.ts  # The 1000 ImageNet labels (generated from the model's metadata)
-    labels.ts          # The 80 COCO labels + Vietnamese translations
-    runModel.ts        # Model output parsing, shared by the camera and photo paths
-    scanImage.ts       # Scan a library photo: Skia-built model input, both passes
-    theme.ts           # Colours, fonts, radii, easing curves
+    shared/            # Cross-cutting: used by both the detection pipeline and the UI
+      boxLayout.ts     #   Coordinate mapping: model square → frame → screen
+      constants.ts     #   MODEL_SIZE, PERSON_CLASS_ID, thresholds, NMS IoU
+      detections.ts    #   Detection type, IoU, NMS merge
+      labels.ts        #   The 80 COCO labels + Vietnamese translations
+      theme.ts         #   Colours, fonts, radii, easing curves
+    detection/         # The model pipeline, orchestrated only by DetectorScreen
+      annotate.ts      #   Burn boxes into the photo at save time (offscreen Skia)
+      classify.ts      #   Second-stage: crop a box, name it from 1000 ImageNet classes
+      imagenetLabels.ts #  The 1000 ImageNet labels (generated from the model's metadata)
+      modelInput.ts    #   Shared pixel-building for both TFLite models (NCHW)
+      runModel.ts      #   Model output parsing, shared by the camera and photo paths
+      scanImage.ts     #   Scan a library photo: Skia-built model input, both passes
     components/        # HUD: detection boxes, class filter, photo picker, glass surfaces, buttons, threshold slider, detail sheet
     hooks/             # useAlert (haptics), useSavePhoto (save to photo library)
     screens/           # DetectorScreen: camera, scan worklet, the whole HUD
@@ -259,9 +262,20 @@ ObjectDetector/
 
 ## Engineering notes
 
-- **The model runs on CPU.** The GPU delegate (`'android-gpu'`) was tried and made
-  FPS worse: TFLite's GPU delegate supports quantized uint8 models poorly on many
-  mid-range chips.
+- **The GPU delegate is on (`TRY_GPU = true` in `DetectorScreen.tsx`) and
+  measured working.** It was disabled for a while during a `TFLite: Failed to
+  run` investigation that turned out to be caused by the model file itself —
+  offset-style buffers the bundled LiteRT runtime can't resolve, see
+  [assets/models/README.md](assets/models/README.md) — not the delegate. Once
+  both models were re-exported as clean float32 (rather than the quantized
+  uint8 model this app started with, which GPU delegates handle poorly),
+  Invoke ran clean on a real device (Tecno LI6) for both models: detections
+  matched the CPU run exactly (person 87%, boat 64%), and the classifier
+  named the same object ("gondola") within a few percent — the kind of drift
+  expected from GPU floating-point accumulating in a different order than
+  CPU, not a sign of anything wrong. The load-time fallback to CPU in
+  `useEffect` still only catches failures at load, not at Invoke, so a
+  different device could in principle still need it.
 - **The Skia label font must be a family that really exists on the device.**
   `'System'`, `'Roboto'` and the empty string all return a Typeface that looks
   valid but has no glyphs — text measures to `width = 0` and draws invisibly. On

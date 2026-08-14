@@ -16,7 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraRoll } from '@react-native-camera-roll/camera-roll';
 import { Skia, type SkData } from '@shopify/react-native-skia';
 
-import { COLORS, FONT } from '../theme';
+import { COLORS, FONT } from '../shared/theme';
 
 const PAGE = 60;
 const COLUMNS = 3;

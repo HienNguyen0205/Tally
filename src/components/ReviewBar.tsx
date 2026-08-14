@@ -7,7 +7,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { COLORS, EASE_OUT_EXPO, FONT } from '../theme';
+import { COLORS, EASE_OUT_EXPO, FONT } from '../shared/theme';
 import type { SaveState } from '../hooks/useSavePhoto';
 import { GlassSurface } from './GlassSurface';
 import { IconButton } from './IconButton';

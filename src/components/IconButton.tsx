@@ -7,7 +7,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { COLORS, EASE_OUT_EXPO, RADIUS } from '../theme';
+import { COLORS, EASE_OUT_EXPO, RADIUS } from '../shared/theme';
 import { Icon, type IconName } from './icons';
 
 const ease = Easing.bezier(...EASE_OUT_EXPO);

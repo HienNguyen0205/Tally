@@ -2,8 +2,8 @@ const {
   iou,
   mergeDetections,
   passesThreshold,
-} = require('../src/detections');
-const { PERSON_CLASS_ID } = require('../src/constants');
+} = require('../src/shared/detections');
+const { PERSON_CLASS_ID } = require('../src/shared/constants');
 
 const CHAIR = 56; // một class COCO bất kỳ khác 'person'
 

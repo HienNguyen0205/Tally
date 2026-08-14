@@ -1,9 +1,9 @@
-const { parseDetections } = require('../src/runModel');
+const { parseDetections } = require('../src/detection/runModel');
 const {
   NUM_CLASSES,
   MAX_DETECTIONS,
   RAW_SCORE_FLOOR,
-} = require('../src/constants');
+} = require('../src/shared/constants');
 
 const CHANNELS = NUM_CLASSES + 4;
 

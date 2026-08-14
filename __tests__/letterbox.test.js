@@ -1,4 +1,4 @@
-const { modelDestRect, toFrameBox } = require('../src/boxLayout');
+const { modelDestRect, toFrameBox } = require('../src/shared/boxLayout');
 
 /**
  * Kiểm tra phép quy toạ độ box từ ô vuông của model về hệ khung hình.

@@ -1,11 +1,11 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { COLORS, FONT } from '../theme';
-import { PERSON_CLASS_ID } from '../constants';
-import { labelVi } from '../labels';
-import type { Detection } from '../detections';
-import type { ScreenRect } from '../boxLayout';
+import { COLORS, FONT } from '../shared/theme';
+import { PERSON_CLASS_ID } from '../shared/constants';
+import { labelVi } from '../shared/labels';
+import type { Detection } from '../shared/detections';
+import type { ScreenRect } from '../shared/boxLayout';
 
 const CHIP_H = 20;
 

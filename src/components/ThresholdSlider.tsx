@@ -7,7 +7,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { COLORS, EASE_OUT_EXPO, FONT } from '../theme';
+import { COLORS, EASE_OUT_EXPO, FONT } from '../shared/theme';
 import { Icon } from './icons';
 
 const TRACK_W = 104;

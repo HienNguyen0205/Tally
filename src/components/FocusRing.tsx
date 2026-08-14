@@ -8,7 +8,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { COLORS, EASE_OUT_EXPO } from '../theme';
+import { COLORS, EASE_OUT_EXPO } from '../shared/theme';
 
 const SIZE = 76;
 const ease = Easing.bezier(...EASE_OUT_EXPO);

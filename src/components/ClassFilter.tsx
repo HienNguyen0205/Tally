@@ -7,9 +7,9 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { COLORS, EASE_OUT_EXPO, FONT } from '../theme';
-import { PERSON_CLASS_ID } from '../constants';
-import { labelVi } from '../labels';
+import { COLORS, EASE_OUT_EXPO, FONT } from '../shared/theme';
+import { PERSON_CLASS_ID } from '../shared/constants';
+import { labelVi } from '../shared/labels';
 import { GlassSurface } from './GlassSurface';
 import { Icon } from './icons';
 

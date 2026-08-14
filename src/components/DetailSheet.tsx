@@ -8,9 +8,9 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { COLORS, EASE_OUT_EXPO, FONT } from '../theme';
-import { COCO_LABELS, labelVi } from '../labels';
-import { PERSON_CLASS_ID } from '../constants';
+import { COLORS, EASE_OUT_EXPO, FONT } from '../shared/theme';
+import { COCO_LABELS, labelVi } from '../shared/labels';
+import { PERSON_CLASS_ID } from '../shared/constants';
 import { GlassSurface } from './GlassSurface';
 
 const ease = Easing.bezier(...EASE_OUT_EXPO);

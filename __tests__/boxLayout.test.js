@@ -1,4 +1,4 @@
-const { boxToScreen, toFrameBox } = require('../src/boxLayout');
+const { boxToScreen, toFrameBox } = require('../src/shared/boxLayout');
 
 /**
  * Vùng chạm lệch so với box đã vẽ là lỗi rất khó thấy bằng mắt (bấm hụt vài

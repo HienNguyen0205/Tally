@@ -2,7 +2,7 @@ import React from 'react';
 import { StyleSheet, View, type ViewStyle } from 'react-native';
 import { BlurView } from '@react-native-community/blur';
 
-import { BEZEL_PAD, BLUR, COLORS, RADIUS } from '../theme';
+import { BEZEL_PAD, BLUR, COLORS, RADIUS } from '../shared/theme';
 
 interface Props {
   children: React.ReactNode;
