@@ -3,7 +3,7 @@ import { Vibration, Platform } from 'react-native';
 
 export function useAlert() {
   return useCallback(() => {
-    // Rung theo mẫu: chờ 0ms, rung 200ms, nghỉ 100ms, rung 200ms
+    // Pattern: wait 0ms, buzz 200ms, pause 100ms, buzz 200ms
     if (Platform.OS === 'android') {
       Vibration.vibrate([0, 200, 100, 200]);
     } else {

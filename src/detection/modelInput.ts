@@ -8,15 +8,16 @@ import {
 import type { ScreenRect } from '../shared/boxLayout';
 
 /**
- * Vẽ một vùng ảnh vào ô vuông của model rồi đọc pixel ra float32 0..1, xếp
- * **planar/NCHW**: trọn mặt phẳng R, rồi G, rồi B - không xen kẽ từng pixel.
+ * Draws a region of an image into the model's square, then reads the pixels out
+ * as float32 0..1 laid out **planar/NCHW**: the whole R plane, then G, then B -
+ * not interleaved per pixel.
  *
- * Dùng chung cho cả hai model - phát hiện lẫn phân loại - vì cả hai cùng xuất
- * bằng litert-torch nên cùng nhận NCHW. Chỉ khác nhau ở `src`/`dst`: quét thì
- * lấy cả ảnh, phân loại thì lấy đúng vùng box.
+ * Shared by both models - detector and classifier - because both were exported
+ * through litert-torch and so both take NCHW. Only `src`/`dst` differ: a scan
+ * takes the whole image, a classification takes just the box region.
  *
- * `dst` tính bằng {@link modelDestRect}: nằm gọn trong ô vuông thì phần thừa là
- * viền đen, tràn ra ngoài thì bị cắt - đúng hai chế độ của resizer.
+ * `dst` comes from {@link modelDestRect}: sitting inside the square leaves black
+ * bars, spilling past it crops - exactly the resizer's two modes.
  */
 export function renderToInput(
   image: SkImage,
@@ -45,8 +46,8 @@ export function renderToInput(
   });
   if (pixels == null) return null;
 
-  // Skia chỉ đọc ra được RGBA 4 kênh xen kẽ: bỏ alpha, chia 255 về 0..1, và
-  // tách thành ba mặt phẳng liền nhau.
+  // Skia can only read back interleaved 4-channel RGBA: drop alpha, divide by
+  // 255 into 0..1, and split into three contiguous planes.
   const rgba = pixels as Uint8Array;
   const plane = size * size;
   const chw = new Float32Array(plane * 3);

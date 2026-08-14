@@ -1,10 +1,10 @@
 /**
- * 1000 nhãn ImageNet của yolo26n-cls, trích từ metadata.json trong file
- * .tflite. Index trong mảng = chỉ số kênh output.
+ * yolo26n-cls's 1000 ImageNet labels, taken from metadata.json inside the
+ * .tflite file. Array index = output channel index.
  *
- * Không dịch sang tiếng Việt: 1000 tên loài/vật quá chi tiết để dịch thủ
- * công, và tên gốc vẫn tra cứu được. Nhãn thô của COCO trong labels.ts mới
- * là thứ người dùng đọc chính.
+ * Deliberately not translated into Vietnamese: 1000 species/object names are
+ * too fine-grained to translate by hand, and the originals stay searchable. The
+ * coarse COCO labels in labels.ts are what users read first.
  */
 export const IMAGENET_LABELS = [
   "tench",

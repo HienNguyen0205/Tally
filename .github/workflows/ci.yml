@@ -22,3 +22,27 @@ jobs:
       - run: npm run lint
 
       - run: npm test
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.11.0'
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - run: npm ci
+
+      # Biên dịch cả native. Lint/test không bắt được lỗi CMake/NDK, mà đó lại
+      # là thứ hay vỡ nhất khi bump reanimated/worklets/skia.
+      - run: ./gradlew assembleDebug --no-daemon
+        working-directory: android

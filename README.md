@@ -105,6 +105,104 @@ npm run android
 npm run ios
 ```
 
+### Release builds
+
+Release enables R8 minification. `proguard-rules.pro` keeps
+`org.tensorflow.lite.**` and `com.google.ai.edge.litert.**` — those classes are
+reached only through JNI `FindClass`, so R8 cannot see the references and would
+otherwise strip them, crashing the app on model load.
+
+Signing reads four Gradle properties. Put them in `~/.gradle/gradle.properties`
+(never in the repo — `*.keystore` and `*.jks` are gitignored):
+
+```properties
+TALLY_STORE_FILE=/absolute/path/to/tally-release.jks
+TALLY_STORE_PASSWORD=...
+TALLY_KEY_ALIAS=tally
+TALLY_KEY_PASSWORD=...
+```
+
+Without them the release build falls back to the debug key, so it still builds
+and installs for local testing — it just cannot be published.
+
+### Fastlane
+
+The build commands live in [`fastlane/Fastfile`](fastlane/Fastfile) so a local
+release and a CI release run the same code path. Requires Ruby:
+
+```bash
+bundle install
+```
+
+| Lane | What it does |
+|---|---|
+| `bundle exec fastlane android debug` | debug APK, installed on the connected device |
+| `bundle exec fastlane android release` | signed APKs, one per phone ABI |
+| `bundle exec fastlane android bundle` | App Bundle for the Play Store |
+| `bundle exec fastlane android github tag:v1.0.0` | the release lane, then publish to GitHub |
+
+Signing stays entirely Gradle's business in every lane — locally from
+`~/.gradle/gradle.properties`, in CI from `ORG_GRADLE_PROJECT_*` env vars — so
+there are no credentials in the Fastfile.
+
+### What the lanes run underneath
+
+Play splits an AAB per-ABI on the server, so `bundleRelease` needs no ABI
+configuration and no per-APK `versionCode` juggling:
+
+```bash
+cd android && ./gradlew bundleRelease
+```
+
+`assembleRelease` on its own produces one universal APK carrying all four ABIs —
+around 211MB, of which ~98MB is the `x86`/`x86_64` libraries that only an
+emulator ever loads. `-PsplitApks` emits one APK per phone ABI instead:
+
+```bash
+cd android && ./gradlew clean
+```
+
+```bash
+cd android && ./gradlew assembleRelease -PsplitApks
+```
+
+Two invocations, not `./gradlew clean assembleRelease`. Combined, `clean` deletes
+the autolinked libraries' `prefab_package` directories while the task graph
+already assumes they exist, and the app's CMake configure step dies on
+`prefab: directory … is not readable`. The `release` lane runs them separately
+for this reason.
+
+The `clean` itself matters: React Native's asset-copy task only ever adds to
+`android/app/build/generated/res/react/`, so a model removed from `assets/models`
+keeps shipping in the APK until the directory is wiped.
+
+Measured on a clean build: **73MB** for `arm64-v8a`, **59MB** for `armeabi-v7a`,
+down from a 211MB universal APK.
+
+### Publishing
+
+Pushing a `v*` tag runs [`.github/workflows/release.yml`](.github/workflows/release.yml),
+which calls the `github` lane to build both APKs and attach them to a GitHub
+Release. It needs four repository secrets, and fails fast if the first is missing
+rather than publishing a debug-signed build:
+
+| Secret | Value |
+|---|---|
+| `TALLY_KEYSTORE_BASE64` | `base64 -w0 tally-release.jks` |
+| `TALLY_STORE_PASSWORD` | keystore password |
+| `TALLY_KEY_ALIAS` | key alias |
+| `TALLY_KEY_PASSWORD` | key password |
+
+Generate the keystore once and keep it safe — losing it means losing the ability
+to ship updates to anyone who already installed the app:
+
+```bash
+keytool -genkeypair -v -keystore tally-release.jks -alias tally -keyalg RSA -keysize 2048 -validity 10000
+```
+
+The APK itself never belongs in the repository: GitHub caps files at 100MB, and
+a binary committed once stays in the history for every future clone.
+
 ## Permissions
 
 | Permission | Platform | Why it's needed |

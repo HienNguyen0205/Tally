@@ -1,9 +1,10 @@
 /**
- * Nhãn 80 class COCO của YOLO, trích từ metadata.json trong file .tflite.
- * Index trong mảng = classId model trả về.
+ * YOLO's 80 COCO labels, taken from metadata.json inside the .tflite file.
+ * Array index = the classId the model returns.
  *
- * KHÁC danh sách 90 class của EfficientDet: YOLO đánh số liên tục, không có
- * ô trống '???'. Dùng nhầm bảng thì mọi class trừ 'person' đều sai tên.
+ * DIFFERENT from EfficientDet's 90-class list: YOLO numbers them contiguously,
+ * with no '???' gaps. Use the wrong table and every class but 'person' gets the
+ * wrong name.
  */
 export const COCO_LABELS = [
   'person',
@@ -171,7 +172,7 @@ const VI: Record<string, string> = {
   toothbrush: 'bàn chải',
 };
 
-/** Tên tiếng Việt của class, không có thì trả lại tên gốc. */
+/** The class's Vietnamese name, falling back to the original. */
 export function labelVi(classId: number): string {
   const en = COCO_LABELS[classId];
   if (en == null) return `#${classId}`;

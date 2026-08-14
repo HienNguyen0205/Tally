@@ -13,22 +13,23 @@ export interface ScreenRect {
 }
 
 /**
- * Ô vuông mà resizer đã ép khung hình vào trước khi đưa cho model.
+ * The square the resizer squeezed the frame into before handing it to the model.
  *
- * - `'contain'` (letterbox): cạnh = cạnh DÀI của frame, phần thừa là viền đen.
- *   Giữ trọn khung hình.
- * - `'cover'`: cạnh = cạnh NGẮN, cắt bớt hai đầu cạnh dài. Mất rìa nhưng phần
- *   giữa được dùng trọn cạnh ô vuông nên vật thể nhỏ rõ hơn hẳn.
+ * - `'contain'` (letterbox): side = the frame's LONG edge, the surplus is black
+ *   bars. Keeps the whole frame.
+ * - `'cover'`: side = the SHORT edge, trimming both ends of the long one. Loses
+ *   the margins, but the middle gets the full square, so small objects come
+ *   through far more clearly.
  */
 export type ScanSpace = 'contain' | 'cover';
 
 /**
- * Quy box từ ô vuông của model về hệ chuẩn hoá của FRAME (0..1).
+ * Maps a box out of the model's square into the FRAME's normalised space (0..1).
  *
- * Hai lượt quét dùng hai ô vuông khác nhau nên phải quy về cùng một hệ ngay
- * tại đây - trước khi gộp, đo diện tích hay tính vùng chạm. Offset âm
- * (`'contain'`) là viền đen phải trừ, offset dương (`'cover'`) là phần khung
- * đã bị cắt phải cộng lại.
+ * The two passes use two different squares, so they have to be brought into one
+ * space right here - before merging, measuring area, or working out hit regions.
+ * A negative offset (`'contain'`) is the black bar to subtract; a positive one
+ * (`'cover'`) is the cropped-away frame to add back.
  */
 export function toFrameBox(
   box: NormalizedBox,
@@ -52,12 +53,13 @@ export function toFrameBox(
 }
 
 /**
- * Ô mà một ảnh phải được vẽ vào, bên trong ô vuông cạnh `modelSize` của model.
+ * The rect an image must be drawn into, inside the model's `modelSize` square.
  *
- * Dùng cho đường quét ảnh có sẵn, nơi phải tự dựng input bằng Skia vì resizer
- * chỉ nhận Frame. Là mặt trái của {@link toFrameBox} và phải khớp chính xác
- * cùng quy ước ô vuông - lệch là box sai mà không có lỗi nào báo, nên nó nằm
- * cạnh đây và có test đối chiếu.
+ * Used by the library-photo path, which has to build its input with Skia
+ * because the resizer only accepts a Frame. It is the inverse of
+ * {@link toFrameBox} and must follow exactly the same square convention - drift
+ * here means wrong boxes with no error raised, which is why it lives next door
+ * and has a test pinning the two together.
  */
 export function modelDestRect(
   imageW: number,
@@ -80,11 +82,11 @@ export function modelDestRect(
 }
 
 /**
- * Quy box (đã ở hệ frame, xem {@link toFrameBox}) về pixel của một bề mặt vẽ -
- * màn hình hoặc ảnh chụp.
+ * Maps a box (already in frame space, see {@link toFrameBox}) onto the pixels of
+ * a drawing surface - the screen or a snapshot.
  *
- * Canvas của SkiaCamera vẽ ảnh với fit="cover": phóng theo cạnh nào thiếu rồi
- * cắt bớt cạnh thừa, nên phải dùng max() và bù phần bị cắt.
+ * SkiaCamera's canvas draws with fit="cover": scale up by whichever edge falls
+ * short, then trim the other. Hence max() and the crop compensation.
  */
 export function boxToScreen(
   box: NormalizedBox,

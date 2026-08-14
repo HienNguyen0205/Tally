@@ -1,37 +1,39 @@
-// Nhãn đầu tiên trong metadata.json của model là 'person'.
+// The first label in the model's metadata.json is 'person'.
 export const PERSON_CLASS_ID = 0;
 
-// Kích thước input, đọc từ metadata (imgsz) và xác nhận bằng shape tensor vào:
-// [1, 3, 640, 640] float32 - NCHW nên resizer để pixelLayout 'planar'.
+// Input size, read from the metadata (imgsz) and confirmed against the input
+// tensor shape: [1, 3, 640, 640] float32 - NCHW, hence pixelLayout 'planar'.
 export const MODEL_SIZE = 640;
 
-// Số class của model. Sai số này thì việc tách box/score trong output lệch hết.
+// The model's class count. Get this wrong and every box/score split in the
+// output lands in the wrong place.
 export const NUM_CLASSES = 80;
 
-// Ô vuông của model phân loại (yolo26n-cls, `imgsz` trong metadata của nó).
-// 224 chứ không phải 640 như detector: input ở đây là một vùng box đã cắt sẵn
-// và việc của model chỉ là gọi tên, không phải đi tìm. Ít hơn 8 lần pixel.
+// The classifier's square (yolo26n-cls, `imgsz` in its own metadata). 224
+// rather than the detector's 640: the input here is an already-cropped box and
+// the model only has to name it, not go looking. Eight times fewer pixels.
 export const CLASSIFY_SIZE = 224;
 
-// Dưới mức này thì model đang đoán mò - thà không hiện tên chi tiết còn hơn
-// hiện một cái sai. Đo trên máy: crop người ra "sarong 6%", crop thuyền ra tên
-// đúng với điểm cao hơn hẳn.
+// Below this the model is guessing - better no refined name than a wrong one.
+// Measured on device: a person crop returns "sarong 6%", a boat crop returns
+// the right name with a far higher score.
 export const MIN_REFINED_SCORE = 0.2;
 
-// YOLO26 xuất với end2end=false: NMS KHÔNG nằm trong graph, output là 8400
-// anchor thô. Nên trần này là lựa chọn của ta, không phải giới hạn của model -
-// giữ lại bấy nhiêu box điểm cao nhất mỗi lượt trước khi chạy NMS.
+// YOLO26 is exported with end2end=false: NMS is NOT in the graph, the output is
+// 8400 raw anchors. So this ceiling is our choice, not the model's limit - keep
+// this many top-scoring boxes per pass before running NMS.
 export const MAX_DETECTIONS = 100;
 
-// Ngưỡng mặc định, áp chung cho mọi class. Đã thử hạ riêng cho class không phải
-// 'person' rồi bỏ: thanh trượt ghi 90% mà vật thể 73% vẫn hiện là nói dối.
-// 0.5 chứ không phải 0.6 như hồi chỉ đếm người - 0.6 chọn riêng cho 'person'.
+// Default threshold, shared by every class. A separate lower threshold for
+// non-person classes was tried and dropped: a slider reading 90% while a 73%
+// object is still on screen is a lie. 0.5 rather than the 0.6 used back when
+// this only counted people - that 0.6 was chosen for 'person' specifically.
 export const SCORE_THRESHOLD = 0.5;
 
-// Sàn cứng lúc đọc output, chỉ để cắt rác. Lọc thật do JS lo nên sàn phải thấp
-// hơn mức nhỏ nhất thanh trượt đặt được (0.2).
+// Hard floor while reading the output, purely to cut noise. Real filtering
+// happens in JS, so this must sit below the lowest the slider can go (0.2).
 export const RAW_SCORE_FLOOR = 0.05;
 
-// Hai lượt quét cùng nhìn một cảnh nên vật thể giữa khung hay bị bắt hai lần.
-// Chồng quá mức này thì coi là một, giữ bản điểm cao hơn.
+// Both passes look at the same scene, so an object mid-frame tends to get
+// caught twice. Overlap beyond this counts as one, keeping the higher score.
 export const NMS_IOU = 0.55;

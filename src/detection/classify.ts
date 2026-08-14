@@ -12,25 +12,26 @@ export interface Refined {
 }
 
 /**
- * Gọi tên chi tiết cho một vật thể đã phát hiện: COCO chỉ có 80 loại thô nên
- * mọi giống chó đều là "chó"; model phân loại có 1000 loại ImageNet.
+ * Names a detected object more precisely: COCO's 80 coarse classes make every
+ * breed just "dog", while the classifier has ImageNet's 1000.
  *
- * `rect` là vùng box tính bằng PIXEL CỦA `image` - dùng `boxToScreen` với kích
- * thước ảnh để quy từ hệ frame sang.
+ * `rect` is the box region in `image`'s OWN PIXELS - use `boxToScreen` with the
+ * image dimensions to convert out of frame space.
  *
- * Chạy `run` bất đồng bộ chứ không `runSync`: đây là JS thread, mà một lượt
- * suy luận 640² đủ lâu để làm khựng giao diện.
+ * Uses async `run` rather than `runSync`: this is the JS thread, and a single
+ * inference takes long enough to stall the UI.
  */
 export async function classifyCrop(
   model: TensorflowModel,
   image: SkImage,
   rect: ScreenRect,
 ): Promise<Refined | null> {
-  // Giữ nguyên tỉ lệ vùng cắt (thừa ra thì để đen) thay vì bóp méo - vật thể
-  // bị kéo giãn thì phân loại sai hẳn.
+  // Preserve the crop's aspect ratio (letterboxing the remainder) rather than
+  // squashing it - a stretched object classifies badly.
   //
-  // Khối này ĐỒNG BỘ (Skia đọc pixel rồi tách kênh). Ở 224 nó gọn trong một
-  // khung hình; hồi model còn để 640 thì tốn ~126ms và phải hoãn hẳn ra.
+  // This block is SYNCHRONOUS (Skia reads pixels, then splits channels). At 224
+  // it fits in a frame; back when the model ran at 640 it cost ~126ms and had
+  // to be deferred outright.
   const input = renderToInput(
     image,
     rect,
@@ -48,7 +49,7 @@ export async function classifyCrop(
   }
 
   const label = IMAGENET_LABELS[best];
-  // Graph có sẵn softmax nên điểm đã là xác suất 0..1.
+  // The graph already applies softmax, so the score is a 0..1 probability.
   const score = scores[best]!;
   if (label == null || score < MIN_REFINED_SCORE) return null;
   return { label, score };

@@ -19,12 +19,13 @@ interface Props {
 const ease = Easing.bezier(...EASE_OUT_EXPO);
 
 /**
- * Bảng kết quả nổi ở đỉnh màn hình. Chỉ dựng khi đã có kết quả - lúc chưa quét
- * thì không có gì để nói, và khung hình đáng được nhìn hơn một dòng gợi ý.
+ * The result island floating at the top of the screen. Mounted only once there
+ * is a result - before a scan there is nothing to say, and the viewfinder
+ * deserves the space more than a hint line does.
  */
 export function ResultIsland({ peopleCount, objectCount }: Props) {
   const { width, height } = useWindowDimensions();
-  // Nằm ngang: dạt sang trái để không đụng nút chụp đã chuyển sang cạnh phải.
+  // Landscape: shift left to clear the shutter, which has moved to the right.
   const landscape = width > height;
 
   const reveal = useSharedValue(0);
@@ -40,7 +41,7 @@ export function ResultIsland({ peopleCount, objectCount }: Props) {
     );
   }, [peopleCount, objectCount, reveal, stagger]);
 
-  // Chỉ animate transform/opacity - không đụng width/height để khỏi reflow.
+  // Animate transform/opacity only - leave width/height alone to avoid reflow.
   const shellStyle = useAnimatedStyle(() => ({
     opacity: reveal.value,
     transform: [
@@ -97,7 +98,7 @@ const styles = StyleSheet.create({
     right: undefined,
     alignItems: 'flex-start',
   },
-  // Một dòng ngang duy nhất - chế độ xem ảnh cần nhường chỗ cho khung hình.
+  // A single row - review mode has to give the image its space.
   corePill: {
     flexDirection: 'row',
     alignItems: 'center',

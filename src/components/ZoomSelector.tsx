@@ -19,8 +19,8 @@ interface Props {
 }
 
 /**
- * Chọn mức zoom: chạm để nhảy tới, hoặc kéo ngang để lướt qua các mức.
- * Chỉ báo nền trượt theo với quán tính thay vì đổi màu tức thì.
+ * Zoom step picker: tap to jump, or drag sideways to sweep through the steps.
+ * The backing indicator slides with momentum instead of snapping colour.
  */
 export function ZoomSelector({ steps, value, onChange }: Props) {
   const index = Math.max(0, steps.indexOf(value));
@@ -28,8 +28,8 @@ export function ZoomSelector({ steps, value, onChange }: Props) {
   const startIndex = useRef(index);
   const dragging = useRef(false);
 
-  // Đồng bộ khi giá trị đổi từ bên ngoài (vd: reset về 1x). Trong effect chứ
-  // không giữa thân render, và bỏ qua khi đang kéo kẻo hai bên giành nhau.
+  // Sync when the value changes from outside (e.g. reset to 1x). In an effect
+  // rather than mid-render, and skipped mid-drag so the two do not fight.
   useEffect(() => {
     if (dragging.current) return;
     pos.value = withTiming(index, { duration: 420, easing: ease });
@@ -46,7 +46,8 @@ export function ZoomSelector({ steps, value, onChange }: Props) {
   const pan = useMemo(
     () =>
       PanResponder.create({
-        // Chỉ cướp cử chỉ khi thật sự kéo ngang, để cú chạm vẫn tới được nút.
+        // Claim the gesture only on a real horizontal drag, so taps still reach
+        // the buttons.
         onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 6,
         onPanResponderGrant: () => {
           dragging.current = true;
@@ -58,7 +59,7 @@ export function ZoomSelector({ steps, value, onChange }: Props) {
         },
         onPanResponderRelease: () => {
           dragging.current = false;
-          // Thả ra thì bám vào mức gần nhất.
+          // On release, snap to the nearest step.
           moveTo(Math.round(pos.value));
         },
         onPanResponderTerminate: () => {
@@ -94,7 +95,7 @@ export function ZoomSelector({ steps, value, onChange }: Props) {
   );
 }
 
-/** Nhãn đổi màu mềm theo trạng thái thay vì nhảy màu đột ngột. */
+/** Label that eases between state colours rather than jumping. */
 function ZoomLabel({
   children,
   active,

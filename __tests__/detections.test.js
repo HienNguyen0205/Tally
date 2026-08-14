@@ -5,28 +5,29 @@ const {
 } = require('../src/shared/detections');
 const { PERSON_CLASS_ID } = require('../src/shared/constants');
 
-const CHAIR = 56; // một class COCO bất kỳ khác 'person'
+const CHAIR = 56; // any COCO class other than 'person'
 
 function box(xmin, ymin, xmax, ymax, score, classId) {
   return { xmin, ymin, xmax, ymax, score, classId };
 }
 
-describe('ngưỡng tin cậy', () => {
-  it('đúng bằng ngưỡng thì vẫn được giữ', () => {
+describe('confidence threshold', () => {
+  it('keeps a detection sitting exactly on the threshold', () => {
     expect(passesThreshold(box(0, 0, 1, 1, 0.6, PERSON_CLASS_ID), 0.6)).toBe(
       true,
     );
   });
 
-  it('dưới ngưỡng thì bị loại', () => {
+  it('drops a detection below the threshold', () => {
     expect(passesThreshold(box(0, 0, 1, 1, 0.59, PERSON_CLASS_ID), 0.6)).toBe(
       false,
     );
   });
 
-  // Chặn đúng lỗi đã gặp: kéo thanh lên 90% mà vật thể 73%/74% vẫn hiện, vì
-  // class không phải 'person' từng được hạ ngưỡng riêng.
-  it('mọi class chịu chung một ngưỡng, không ưu ái class nào', () => {
+  // Guards the exact bug that was shipped once: the slider was at 90% yet 73%
+  // and 74% objects still showed, because non-person classes got their own
+  // lowered threshold.
+  it('applies one threshold to every class, favouring none', () => {
     for (const classId of [PERSON_CLASS_ID, CHAIR]) {
       expect(passesThreshold(box(0, 0, 1, 1, 0.73, classId), 0.9)).toBe(false);
       expect(passesThreshold(box(0, 0, 1, 1, 0.91, classId), 0.9)).toBe(true);
@@ -35,30 +36,46 @@ describe('ngưỡng tin cậy', () => {
 });
 
 describe('iou', () => {
-  it('trùng khít = 1', () => {
+  it('is 1 for identical boxes', () => {
     const a = box(0.1, 0.1, 0.5, 0.5, 0.9, PERSON_CLASS_ID);
     expect(iou(a, a)).toBeCloseTo(1);
   });
 
-  it('rời hẳn = 0', () => {
+  it('is 0 for disjoint boxes', () => {
     const a = box(0, 0, 0.2, 0.2, 0.9, PERSON_CLASS_ID);
     const b = box(0.5, 0.5, 0.9, 0.9, 0.9, PERSON_CLASS_ID);
     expect(iou(a, b)).toBe(0);
   });
 
-  it('chồng một nửa theo mỗi cạnh', () => {
-    // Hai ô vuông cạnh 0.4 lệch nhau 0.2 mỗi chiều: giao 0.2x0.2 = 0.04,
-    // hợp = 0.16 + 0.16 - 0.04 = 0.28.
+  it('handles a half-overlap along each edge', () => {
+    // Two 0.4 squares offset by 0.2 on each axis: intersection 0.2x0.2 = 0.04,
+    // union = 0.16 + 0.16 - 0.04 = 0.28.
     const a = box(0, 0, 0.4, 0.4, 0.9, PERSON_CLASS_ID);
     const b = box(0.2, 0.2, 0.6, 0.6, 0.9, PERSON_CLASS_ID);
     expect(iou(a, b)).toBeCloseTo(0.04 / 0.28);
   });
+
+  // A collapsed box makes the union zero, and the guard has to return 0 rather
+  // than divide by it.
+  it('is 0 when a box has no area, instead of NaN', () => {
+    const flat = box(0.3, 0.3, 0.3, 0.3, 0.9, PERSON_CLASS_ID);
+    expect(iou(flat, flat)).toBe(0);
+    expect(Number.isNaN(iou(flat, flat))).toBe(false);
+  });
+
+  // Decoding cx/cy/w/h can hand back xmax < xmin on a garbage anchor. Area
+  // clamps at 0, so this must not come out negative.
+  it('never goes negative on an inverted box', () => {
+    const inverted = box(0.6, 0.6, 0.2, 0.2, 0.9, PERSON_CLASS_ID);
+    const normal = box(0.1, 0.1, 0.5, 0.5, 0.9, PERSON_CLASS_ID);
+    expect(iou(inverted, normal)).toBeGreaterThanOrEqual(0);
+  });
 });
 
-describe('gộp kết quả hai lượt quét', () => {
+describe('merging two scan passes', () => {
   const IOU = 0.55;
 
-  it('cùng vật thể ở hai lượt chỉ còn một, giữ bản điểm cao hơn', () => {
+  it('collapses the same object seen twice, keeping the higher score', () => {
     const wide = [box(0.2, 0.2, 0.6, 0.6, 0.71, PERSON_CLASS_ID)];
     const tight = [box(0.21, 0.21, 0.61, 0.61, 0.88, PERSON_CLASS_ID)];
 
@@ -67,9 +84,9 @@ describe('gộp kết quả hai lượt quét', () => {
     expect(merged[0].score).toBeCloseTo(0.88);
   });
 
-  // Lý do chính để chạy lượt 'cover': vật thể nhỏ ở giữa khung mà lượt toàn
-  // cảnh trượt hẳn.
-  it('vật thể chỉ một lượt thấy vẫn được giữ', () => {
+  // The whole reason for the 'cover' pass: a small object mid-frame that the
+  // full-scene pass misses entirely.
+  it('keeps an object only one pass saw', () => {
     const wide = [box(0.1, 0.1, 0.3, 0.3, 0.8, PERSON_CLASS_ID)];
     const tight = [
       box(0.1, 0.1, 0.3, 0.3, 0.8, PERSON_CLASS_ID),
@@ -81,15 +98,15 @@ describe('gộp kết quả hai lượt quét', () => {
     expect(merged.some(d => d.classId === CHAIR)).toBe(true);
   });
 
-  it('hai vật thể khác class chồng nhau đều được giữ', () => {
-    // Người bế con mèo: chồng gần như hoàn toàn nhưng là hai vật thể thật.
+  it('keeps two overlapping objects of different classes', () => {
+    // Someone holding a cat: near-total overlap, but two real objects.
     const a = box(0.2, 0.2, 0.6, 0.6, 0.9, PERSON_CLASS_ID);
     const b = box(0.2, 0.2, 0.6, 0.6, 0.7, CHAIR);
 
     expect(mergeDetections([[a], [b]], IOU)).toHaveLength(2);
   });
 
-  it('trả về theo thứ tự điểm giảm dần', () => {
+  it('returns results in descending score order', () => {
     const merged = mergeDetections(
       [
         [box(0, 0, 0.1, 0.1, 0.4, CHAIR)],
@@ -98,5 +115,36 @@ describe('gộp kết quả hai lượt quét', () => {
       IOU,
     );
     expect(merged.map(d => d.score)).toEqual([0.95, 0.4]);
+  });
+
+  it('survives empty input', () => {
+    expect(mergeDetections([], IOU)).toEqual([]);
+    expect(mergeDetections([[], []], IOU)).toEqual([]);
+  });
+
+  // Greedy NMS compares against boxes already KEPT, not against everything
+  // suppressed. C overlaps the suppressed B but not the kept A, so C stays.
+  // Pinning this down because the alternative reading - suppressing anything
+  // that touches a discarded box - would silently eat real detections in a
+  // crowd.
+  it('suppresses against kept boxes only, not discarded ones', () => {
+    const a = box(0.0, 0.0, 0.4, 0.4, 0.9, PERSON_CLASS_ID);
+    const b = box(0.05, 0.05, 0.45, 0.45, 0.8, PERSON_CLASS_ID); // eaten by A
+    const c = box(0.3, 0.3, 0.7, 0.7, 0.7, PERSON_CLASS_ID); // overlaps B, not A
+
+    const merged = mergeDetections([[a, b, c]], IOU);
+    expect(merged.map(d => d.score)).toEqual([0.9, 0.7]);
+  });
+
+  it('merges more than two passes', () => {
+    const merged = mergeDetections(
+      [
+        [box(0, 0, 0.2, 0.2, 0.9, PERSON_CLASS_ID)],
+        [box(0.3, 0.3, 0.5, 0.5, 0.8, CHAIR)],
+        [box(0.6, 0.6, 0.8, 0.8, 0.7, PERSON_CLASS_ID)],
+      ],
+      IOU,
+    );
+    expect(merged).toHaveLength(3);
   });
 });

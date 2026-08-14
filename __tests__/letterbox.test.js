@@ -1,50 +1,52 @@
 const { modelDestRect, toFrameBox } = require('../src/shared/boxLayout');
 
 /**
- * Kiểm tra phép quy toạ độ box từ ô vuông của model về hệ khung hình.
- * Lệch vài chục pixel rất khó phát hiện bằng mắt trên máy thật nên kiểm bằng số.
+ * Checks the mapping of box coordinates out of the model's square and into frame
+ * space. Drift of a few dozen pixels is very hard to spot by eye on a real
+ * device, so it gets pinned numerically.
  *
- * Hai lượt quét dùng hai ô vuông khác nhau ('contain' giữ trọn khung + viền
- * đen, 'cover' cắt lấy ô vuông giữa) nên đây là chỗ duy nhất biết sự khác biệt
- * đó - sai ở đây thì mọi thứ phía sau lệch theo mà không có lỗi nào báo.
+ * The two passes use two different squares ('contain' keeps the whole frame plus
+ * black bars, 'cover' takes the centre square), and this is the only place that
+ * knows the difference - get it wrong here and everything downstream shifts with
+ * it, with no error raised.
  */
-// Điểm giữa của box, tính trong hệ frame (0..1).
+// The box's midpoint, in frame space (0..1).
 function centerOf(box) {
   return { x: (box.xmin + box.xmax) / 2, y: (box.ymin + box.ymax) / 2 };
 }
 
-// Box suy biến thành một điểm, để kiểm phép map từng điểm.
+// A box collapsed to a single point, to check the per-point mapping.
 function point(x, y) {
   return { xmin: x, ymin: y, xmax: x, ymax: y };
 }
 
-describe("quy box về hệ frame - 'contain' (letterbox)", () => {
-  // Frame dọc mặc định của app: 720x1280 (HD_16_9 sau khi xoay đứng).
+describe("mapping into frame space - 'contain' (letterbox)", () => {
+  // The app's default portrait frame: 720x1280 (HD_16_9 once rotated upright).
   const W = 720;
   const H = 1280;
-  // Viền đen mỗi bên trái/phải: (1280-720)/2 = 280px → chuẩn hoá 280/1280.
+  // Black bar on each side: (1280-720)/2 = 280px -> normalised 280/1280.
   const padX = (H - W) / 2 / H;
 
-  it('tâm ô vuông rơi đúng tâm khung hình', () => {
+  it('puts the square centre on the frame centre', () => {
     const c = centerOf(toFrameBox(point(0.5, 0.5), 'contain', W, H));
     expect(c.x).toBeCloseTo(0.5);
     expect(c.y).toBeCloseTo(0.5);
   });
 
-  it('bù đúng viền đen ở hai mép trái/phải', () => {
+  it('compensates for the black bars on both sides', () => {
     expect(centerOf(toFrameBox(point(padX, 0.5), 'contain', W, H)).x).toBeCloseTo(0);
     expect(
       centerOf(toFrameBox(point(1 - padX, 0.5), 'contain', W, H)).x,
     ).toBeCloseTo(1);
   });
 
-  // Điểm mấu chốt: 'cover' một mình trước đây cắt mất hoàn toàn đỉnh và đáy.
-  it('phủ tới tận đỉnh và đáy khung hình', () => {
+  // The crux: 'cover' on its own used to cut the top and bottom off entirely.
+  it('reaches all the way to the top and bottom of the frame', () => {
     expect(centerOf(toFrameBox(point(0.5, 0), 'contain', W, H)).y).toBeCloseTo(0);
     expect(centerOf(toFrameBox(point(0.5, 1), 'contain', W, H)).y).toBeCloseTo(1);
   });
 
-  it('đúng cả khi xoay ngang', () => {
+  it('holds up in landscape', () => {
     const c = centerOf(
       toFrameBox(point(0.5, (1280 - 720) / 2 / 1280), 'contain', 1280, 720),
     );
@@ -53,42 +55,44 @@ describe("quy box về hệ frame - 'contain' (letterbox)", () => {
   });
 });
 
-describe("quy box về hệ frame - 'cover' (cắt ô vuông giữa)", () => {
+describe("mapping into frame space - 'cover' (centre crop)", () => {
   const W = 720;
   const H = 1280;
-  // Ô vuông cạnh 720 đặt giữa khung cao 1280 → cắt mất (1280-720)/2 = 280px
-  // mỗi đầu, tức 280/1280 của chiều cao.
+  // A 720 square centred in a 1280-tall frame crops (1280-720)/2 = 280px off
+  // each end, i.e. 280/1280 of the height.
   const cropY = (H - W) / 2 / H;
 
-  it('tâm ô vuông vẫn rơi đúng tâm khung hình', () => {
+  it('still puts the square centre on the frame centre', () => {
     const c = centerOf(toFrameBox(point(0.5, 0.5), 'cover', W, H));
     expect(c.x).toBeCloseTo(0.5);
     expect(c.y).toBeCloseTo(0.5);
   });
 
-  it('bề ngang dùng trọn khung, không có viền', () => {
+  it('uses the full width, with no bars', () => {
     expect(centerOf(toFrameBox(point(0, 0.5), 'cover', W, H)).x).toBeCloseTo(0);
     expect(centerOf(toFrameBox(point(1, 0.5), 'cover', W, H)).x).toBeCloseTo(1);
   });
 
-  it('đỉnh ô vuông nằm hẳn trong khung - phần bị cắt phải cộng lại', () => {
+  it('keeps the square top inside the frame - the crop must be added back', () => {
     expect(centerOf(toFrameBox(point(0.5, 0), 'cover', W, H)).y).toBeCloseTo(cropY);
     expect(centerOf(toFrameBox(point(0.5, 1), 'cover', W, H)).y).toBeCloseTo(
       1 - cropY,
     );
   });
 
-  it('cùng một vật thể ở giữa khung thì hai lượt cho ra cùng một chỗ', () => {
-    // Vật thể chiếm nửa ô vuông 'cover' → trong hệ frame nó phải trùng với box
-    // tương ứng của lượt 'contain'. Đây chính là điều kiện để NMS gộp được.
+  it('lands both passes on the same spot for one object mid-frame', () => {
+    // An object filling half the 'cover' square must, in frame space, coincide
+    // with the matching box from the 'contain' pass. That coincidence is exactly
+    // what lets NMS merge them.
     const tight = toFrameBox(
       { xmin: 0.25, ymin: 0.25, xmax: 0.75, ymax: 0.75 },
       'cover',
       W,
       H,
     );
-    // Cùng vùng đó nhìn từ ô vuông 'contain': cạnh 1280, tâm trùng tâm frame.
-    // Vật thể là hình vuông cạnh W/2 = 360px, quy theo cạnh ô vuông 1280.
+    // The same region seen from the 'contain' square: side 1280, centred on the
+    // frame centre. The object is a square of side W/2 = 360px, expressed
+    // against the 1280 square.
     const side = W / 2 / H;
     const wide = toFrameBox(
       {
@@ -110,14 +114,15 @@ describe("quy box về hệ frame - 'cover' (cắt ô vuông giữa)", () => {
 });
 
 /**
- * Đường quét ảnh có sẵn tự dựng input bằng Skia thay vì dùng resizer, nên phép
- * đặt ảnh vào ô vuông model phải khớp CHÍNH XÁC quy ước mà toFrameBox giả định.
- * Lệch ở đây thì box trên ảnh thư viện sai hệ thống mà không có lỗi nào báo.
+ * The library-photo path builds its input with Skia rather than the resizer, so
+ * the way it places the image into the model's square must match EXACTLY the
+ * convention toFrameBox assumes. Drift here makes boxes on library photos
+ * systematically wrong, with no error raised.
  */
-describe('modelDestRect khớp với toFrameBox', () => {
+describe('modelDestRect agrees with toFrameBox', () => {
   const SIZE = 448;
 
-  // Điểm chuẩn hoá trong ô vuông model → pixel ảnh, suy ngược từ ô đích.
+  // Normalised point in the model square -> image pixel, worked back from dest.
   function pixelFromDest(dest, u, imageSize, axis) {
     const offset = axis === 'x' ? dest.left : dest.top;
     const drawn = axis === 'x' ? dest.width : dest.height;
@@ -131,7 +136,7 @@ describe('modelDestRect khớp với toFrameBox', () => {
       [1000, 1000],
       [4032, 3024],
     ]) {
-      it(`'${space}' ${W}x${H}: hai phép tính chỉ về cùng một pixel`, () => {
+      it(`'${space}' ${W}x${H}: both routes point at the same pixel`, () => {
         const dest = modelDestRect(W, H, space, SIZE);
 
         for (const u of [0, 0.25, 0.5, 0.9, 1]) {

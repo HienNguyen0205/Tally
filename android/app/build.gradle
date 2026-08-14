@@ -57,7 +57,7 @@ react {
 /**
  * Set this to true to Run Proguard on Release builds to minify the Java bytecode.
  */
-def enableProguardInReleaseBuilds = false
+def enableProguardInReleaseBuilds = true
 
 /**
  * The preferred build flavor of JavaScriptCore (JSC)
@@ -92,15 +92,38 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        release {
+            if (project.hasProperty('TALLY_STORE_FILE')) {
+                storeFile file(TALLY_STORE_FILE)
+                storePassword TALLY_STORE_PASSWORD
+                keyAlias TALLY_KEY_ALIAS
+                keyPassword TALLY_KEY_PASSWORD
+            }
+        }
     }
+    // Sideload APKs get split per ABI: x86/x86_64 are emulator-only and account
+    // for ~98MB of a universal build. Off by default so the everyday debug flow
+    // still produces one APK; the release workflow passes -PsplitApks.
+    // Irrelevant to bundleRelease - Play splits an AAB server-side regardless.
+    splits {
+        abi {
+            enable project.hasProperty('splitApks')
+            reset()
+            include "arm64-v8a", "armeabi-v7a"
+            universalApk false
+        }
+    }
+
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            // Ký bằng keystore thật khi TALLY_STORE_FILE có trong ~/.gradle/gradle.properties
+            // hoặc -PTALLY_STORE_FILE=...; ngược lại rơi về debug key để build thử được.
+            signingConfig project.hasProperty('TALLY_STORE_FILE')
+                    ? signingConfigs.release
+                    : signingConfigs.debug
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }

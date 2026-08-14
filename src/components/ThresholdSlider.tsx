@@ -22,13 +22,13 @@ interface Props {
 }
 
 /**
- * Thanh trượt ngưỡng tin cậy - kéo trực tiếp thay vì bấm xoay vòng.
+ * Confidence threshold slider - dragged directly rather than cycled by tapping.
  *
- * Dùng PanResponder của RN core (dự án không có gesture-handler). Cử chỉ chạy
- * trên JS thread nhưng chỉ ghi vào shared value, còn phần vẽ do Reanimated lo
- * trên UI thread nên vẫn mượt.
+ * Uses RN core's PanResponder (the project has no gesture-handler). The gesture
+ * runs on the JS thread but only writes a shared value; Reanimated does the
+ * drawing on the UI thread, so it stays smooth.
  */
-/** Ngưỡng (0.2..0.9) → vị trí trên thanh trượt (0..1). */
+/** Threshold (0.2..0.9) -> position along the track (0..1). */
 function toProgress(value: number): number {
   return (value - MIN) / (MAX - MIN);
 }
@@ -36,9 +36,10 @@ function toProgress(value: number): number {
 export function ThresholdSlider({ value, onChange }: Props) {
   const travel = TRACK_W - KNOB;
   const progress = useSharedValue(toProgress(value));
-  // Giá trị lúc bắt đầu kéo, để cộng dồn quãng đường ngón tay. Tính từ prop
-  // chứ KHÔNG đọc progress.value: đối số useRef chạy ở mọi lần render, mà đọc
-  // shared value giữa thân render đúng là thứ Reanimated cảnh báo.
+  // The value at drag start, so finger travel accumulates onto it. Derived from
+  // the prop rather than read off progress.value: a useRef argument evaluates on
+  // every render, and reading a shared value mid-render is exactly what
+  // Reanimated warns about.
   const startProgress = useRef(toProgress(value));
   const grabbed = useSharedValue(0);
 
@@ -56,7 +57,7 @@ export function ThresholdSlider({ value, onChange }: Props) {
         onPanResponderMove: (_, g) => {
           const next = clamp(startProgress.current + g.dx / travel);
           progress.value = next;
-          // Làm tròn 1% để không đẩy state React mỗi pixel.
+          // Round to 1% so React state is not pushed on every pixel.
           onChange(Math.round((MIN + next * (MAX - MIN)) * 100) / 100);
         },
         onPanResponderRelease: () => {
@@ -117,7 +118,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     borderRadius: 2,
     backgroundColor: COLORS.accent,
-    // Co giãn từ mép trái thay vì từ tâm.
+    // Scale from the left edge rather than the centre.
     transformOrigin: 'left',
   },
   knob: {

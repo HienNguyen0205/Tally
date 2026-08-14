@@ -2,7 +2,6 @@ import React, {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from 'react';
 import {
@@ -20,12 +19,8 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import {
-  useCameraDevice,
-  useCameraPermission,
-  type TorchMode,
-} from 'react-native-vision-camera';
-import { SkiaCamera, type SkiaCameraRef } from 'react-native-vision-camera-skia';
+import { useCameraPermission } from 'react-native-vision-camera';
+import { SkiaCamera } from 'react-native-vision-camera-skia';
 import {
   Canvas,
   Image as SkiaImage,
@@ -54,6 +49,9 @@ import {
 import { COLORS, EASE_OUT_EXPO, FONT, RADIUS } from '../shared/theme';
 import { useAlert } from '../hooks/useAlert';
 import { useSavePhoto } from '../hooks/useSavePhoto';
+import { useCameraControls } from '../hooks/useCameraControls';
+import { useClassFilter } from '../hooks/useClassFilter';
+import { useRefinedLabel } from '../hooks/useRefinedLabel';
 import { ResultIsland } from '../components/ResultIsland';
 import { ScanOverlay } from '../components/ScanOverlay';
 import { GlassSurface } from '../components/GlassSurface';
@@ -69,38 +67,38 @@ import { ClassFilter } from '../components/ClassFilter';
 import { PhotoPicker, loadImageData } from '../components/PhotoPicker';
 import { readFrameDetections } from '../detection/runModel';
 import { scanImage } from '../detection/scanImage';
-import { classifyCrop, type Refined } from '../detection/classify';
 import { annotate } from '../detection/annotate';
 
-// 'idle': xem trước, chờ bấm chụp | 'capturing': quét đúng 1 frame kế tiếp
-// 'frozen': tắt camera, giữ nguyên ảnh đã quét
+// 'idle': preview, waiting for the shutter | 'capturing': scan exactly the next
+// frame | 'frozen': camera off, holding the scanned image still
 type Mode = 'idle' | 'capturing' | 'frozen';
 
-// Animation quét hiển thị thêm sau khi ảnh đã đóng băng, để thấy được là đang quét.
+// The scan animation lingers after the image freezes so the scan is visible.
 const SCAN_ANIM_MS = 900;
 
 const pressEase = Easing.bezier(...EASE_OUT_EXPO);
 
-// Các mức zoom quen thuộc; mức nào vượt quá khả năng máy sẽ tự bị loại bỏ.
+// Familiar zoom steps; any step beyond the device's range is dropped.
 const ZOOM_STEPS = [1, 2, 3, 5];
 
-// GPU delegate: đã đo trên máy thật (Tecno LI6, cả hai model float32), Invoke
-// chạy sạch cho cả detector lẫn classifier - "Thuyền" ra cùng tên với CPU
-// (gondola), điểm lệch vài % do khác thứ tự tích luỹ dấu phẩy động, không phải
-// lỗi. Lần tắt trước là lúc truy lỗi Invoke mà thủ phạm hoá ra là file model
-// (buffer offset - xem assets/models/README.md) chứ không phải delegate.
+// GPU delegate: measured on a real device (Tecno LI6, both models float32),
+// Invoke runs clean for detector and classifier alike - "boat" comes back with
+// the same name as CPU (gondola), a few percent apart because floating-point
+// accumulates in a different order, not because anything is wrong. It was
+// switched off once while chasing an Invoke failure whose real culprit turned
+// out to be the model file (offset buffers - see assets/models/README.md).
 //
-// Lưu ý phần lùi về CPU bên dưới chỉ bắt lỗi lúc NẠP, không bắt lỗi lúc chạy.
-// 'android-gpu' chỉ có trên Android, nền tảng khác ném lỗi ngay lúc nạp nên
-// đừng buồn thử.
+// Note the CPU fallback below only catches LOAD failures, not runtime ones.
+// 'android-gpu' exists on Android only; elsewhere it throws at load time, so
+// don't bother trying.
 const TRY_GPU = true;
 const PREFERRED_DELEGATES: TensorflowModelDelegate[] =
   TRY_GPU && Platform.OS === 'android' ? ['android-gpu'] : [];
 const CPU_ONLY: TensorflowModelDelegate[] = [];
 
-// Khớp đúng tensor vào của model: [1, 3, 640, 640] float32.
-// 'planar' vì shape là NCHW (kênh đứng trước), 'float32' vì resizer xuất giá
-// trị 0..1 - đúng thang YOLO cần.
+// Matches the model's input tensor exactly: [1, 3, 640, 640] float32.
+// 'planar' because the shape is NCHW (channels first), 'float32' because the
+// resizer emits 0..1 - the scale YOLO wants.
 const RESIZER_FORMAT = {
   width: MODEL_SIZE,
   height: MODEL_SIZE,
@@ -109,7 +107,7 @@ const RESIZER_FORMAT = {
   pixelLayout: 'planar',
 } as const;
 
-/** Màn hình trạng thái (xin quyền, đang nạp, lỗi) - thẻ nổi 2 lớp. */
+/** Status screen (permission, loading, error) - a two-layer floating card. */
 function StateScreen({
   eyebrow,
   title,
@@ -122,7 +120,7 @@ function StateScreen({
   action?: { label: string; onPress: () => void };
 }) {
   const { width, height } = useWindowDimensions();
-  // Nằm ngang thì chiều cao ngắn hẳn - giữ nguyên padding dọc sẽ bị tràn.
+  // Landscape is much shorter - keeping the portrait vertical padding overflows.
   const landscape = width > height;
 
   return (
@@ -157,43 +155,26 @@ export function DetectorScreen() {
 
   const [mode, setMode] = useState<Mode>('idle');
   const [scanning, setScanning] = useState(false);
-  // Đường quét ảnh thư viện mất thời gian thật, không như đường camera vốn đã
-  // có kết quả sẵn lúc báo về. Cờ này giữ animation chạy tới khi quét xong.
+  // Scanning a library photo takes real time, unlike the camera path which
+  // already has its result by the time it reports back. This flag keeps the
+  // animation up until the work finishes.
   const [scanBusy, setScanBusy] = useState(false);
   const [result, setResult] = useState<Detection[] | null>(null);
   const [frameSize, setFrameSize] = useState<{ w: number; h: number } | null>(
     null,
   );
   const [picked, setPicked] = useState<Detection | null>(null);
-  // Class bị tắt trên hàng chip lọc. Rỗng = hiện tất cả.
-  const [hidden, setHidden] = useState<ReadonlySet<number>>(new Set());
-  // Khác null = đang xem ảnh thư viện chứ không phải ảnh vừa chụp.
+  // Non-null = reviewing a library photo rather than a freshly captured frame.
   const [photo, setPhoto] = useState<SkImage | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
-  // Tên chi tiết của box đang mở, do model phân loại đoán.
-  const [refined, setRefined] = useState<Refined | null>(null);
-  const [refining, setRefining] = useState(false);
-  // Nhớ câu trả lời theo từng box. So qua so lại giữa các vật thể là thao tác
-  // rất tự nhiên, mà mỗi lần hỏi lại tốn gần nửa giây cho một kết quả không
-  // đổi. Khoá là chính object detection nên `result` đổi là cache hết hiệu lực.
-  const refinedCache = useRef(new Map<Detection, Refined | null>());
-
-  // --- Điều khiển camera ---
-  const [facing, setFacing] = useState<'back' | 'front'>('back');
-  const device = useCameraDevice(facing);
-  const [torch, setTorch] = useState<TorchMode>('off');
-  const [zoom, setZoom] = useState(1);
-  // Box vẽ đè lên ảnh nên đổi ngưỡng là lọc lại được ngay, không phải chụp lại.
+  // Boxes are drawn over the image, so changing the threshold re-filters
+  // immediately - no need to shoot again.
   const [threshold, setThreshold] = useState(SCORE_THRESHOLD);
 
-  const [focusPoint, setFocusPoint] = useState<{ x: number; y: number } | null>(
-    null,
-  );
-  // Camera chưa chạy mà đã set zoom/đèn thì CameraX ném "Camera is not active".
-  // Chỉ truyền các điều khiển này sau khi phiên camera khởi động xong.
-  const [cameraReady, setCameraReady] = useState(false);
+  const cam = useCameraControls();
+  const { hidden, visible, counts, toggle, reset: resetFilter } =
+    useClassFilter(result, threshold);
 
-  const camera = useRef<SkiaCameraRef>(null);
   const { state: saveState, save, reset: resetSave } = useSavePhoto();
 
   const press = useSharedValue(0);
@@ -203,19 +184,20 @@ export function DetectorScreen() {
 
   const onAlert = useAlert();
 
-  // Ô nhớ đọc/ghi được từ cả JS thread lẫn worklet thread: nút bấm (JS) ghi vào
-  // đây, worklet đọc mỗi frame để biết có phải quét frame này không.
+  // A cell readable and writable from both the JS thread and the worklet thread:
+  // the shutter (JS) writes here, the worklet reads it each frame to decide
+  // whether this is the frame to scan.
   const scanCmd = useMemo(() => createSynchronizable<Mode>('idle'), []);
   useEffect(() => {
     scanCmd.setBlocking(mode);
   }, [mode, scanCmd]);
 
-  // --- Nạp model ---
-  // Thử GPU trước rồi lùi về CPU nếu không được.
+  // --- Loading the models ---
+  // Try GPU first, fall back to CPU if that fails.
   //
-  // Suy ra từ hằng số mỗi lần render chứ không giữ trong state: đối số useState
-  // chỉ chạy lúc mount, mà Fast Refresh lại giữ nguyên state - sửa
-  // PREFERRED_DELEGATES sẽ không có tác dụng cho tới khi khởi động lại app.
+  // Derived from constants on every render rather than held in state: a
+  // useState initialiser only runs at mount, and Fast Refresh preserves state -
+  // editing PREFERRED_DELEGATES would do nothing until a full restart.
   const [gpuFailed, setGpuFailed] = useState(false);
   const delegates: TensorflowModelDelegate[] = gpuFailed
     ? CPU_ONLY
@@ -227,8 +209,8 @@ export function DetectorScreen() {
   const model =
     objectDetection.state === 'loaded' ? objectDetection.model : undefined;
 
-  // Model phân loại chỉ dùng khi người dùng chạm vào một box, nên hỏng thì chỉ
-  // mất phần tên chi tiết - đừng để nó chặn cả app như model phát hiện.
+  // The classifier is only used when a box is tapped, so a failure costs just
+  // the refined name - don't let it block the whole app like the detector does.
   const classifier = useTensorflowModel(
     require('../../assets/models/yolo26n-cls.tflite'),
     delegates,
@@ -236,8 +218,18 @@ export function DetectorScreen() {
   const clsModel =
     classifier.state === 'loaded' ? classifier.model : undefined;
 
-  // Shape/kiểu tensor thật mà runtime thấy - đối chiếu với assets/models/README.md
-  // mỗi khi đổi model, vì sai chỗ này không có lỗi nào báo.
+  const { refined, refining } = useRefinedLabel({
+    picked,
+    result,
+    clsModel,
+    frameSize,
+    photo,
+    camera: cam.camera,
+  });
+
+  // The tensor shapes/types the runtime actually sees - check these against
+  // assets/models/README.md whenever the model changes, because getting it
+  // wrong raises no error at all.
   useEffect(() => {
     if (model == null) return;
     console.log('[model] inputs', JSON.stringify(model.inputs));
@@ -245,24 +237,26 @@ export function DetectorScreen() {
     console.log('[model] delegates', JSON.stringify(model.delegates));
   }, [model]);
 
-  // TFLite KHÔNG tự lùi về CPU: máy không dựng được GPU delegate thì hỏng luôn
-  // ở bước tạo interpreter. Không bắt ở đây thì app chết hẳn trên đúng những
-  // máy đó - mà chúng vẫn cài được vì thư viện khai required="false".
+  // TFLite does NOT fall back to CPU on its own: a device that cannot build the
+  // GPU delegate fails outright while creating the interpreter. Without this
+  // catch the app is dead on exactly those devices - which still install it,
+  // because the library declares required="false".
   useEffect(() => {
     if (objectDetection.state === 'error' && delegates.length > 0) {
       console.warn(
-        '[DetectorScreen] không dùng được GPU delegate, lùi về CPU',
+        '[DetectorScreen] GPU delegate unavailable, falling back to CPU',
         objectDetection.error,
       );
       setGpuFailed(true);
     }
   }, [objectDetection, delegates]);
 
-  // --- Hai lượt quét, hai cách ép frame vào ô vuông của model ---
-  // Khung dọc 16:9 nhét vào ô vuông thì 44% bề ngang input là viền đen, vật thể
-  // nhỏ teo còn vài chục pixel và trượt. Nên chạy thêm lượt 'cover' dùng trọn
-  // 640px cho phần giữa khung, rồi gộp: không mất rìa mà vẫn thấy vật thể nhỏ.
-  // Cũng là cách nâng trần 25 detection/lượt lên 50.
+  // --- Two passes, two ways of fitting the frame into the model's square ---
+  // Squeezing a 16:9 portrait frame into a square leaves 44% of the input width
+  // as black bars, shrinking objects to a few dozen pixels and losing them. So a
+  // second 'cover' pass spends all 640px on the middle of the frame, and the two
+  // are merged: the edges survive and small objects still register. It also
+  // lifts the ceiling from 25 detections per pass to 50.
   const { resizer: wideResizer, error: wideError } = useResizer({
     ...RESIZER_FORMAT,
     scaleMode: 'contain',
@@ -277,11 +271,11 @@ export function DetectorScreen() {
     if (!hasPermission) requestPermission();
   }, [hasPermission, requestPermission]);
 
-  // --- Worklet báo kết quả về JS thread ---
+  // --- The worklet reports back to the JS thread ---
   const onScanned = useCallback(
     (wide: Detection[], tight: Detection[], frameW: number, frameH: number) => {
-      // Quy về hệ frame TRƯỚC khi gộp - so trực tiếp toạ độ thô của hai ô
-      // vuông khác nhau sẽ ra kết quả vô nghĩa.
+      // Map into frame space BEFORE merging - comparing raw coordinates from two
+      // different squares directly produces nonsense.
       const merged = mergeDetections(
         [
           wide.map(d => ({ ...d, ...toFrameBox(d, 'contain', frameW, frameH) })),
@@ -292,7 +286,7 @@ export function DetectorScreen() {
 
       setResult(merged);
       setFrameSize({ w: frameW, h: frameH });
-      setMode('frozen'); // tắt camera ngay, giữ đúng ảnh vừa quét
+      setMode('frozen'); // stop the camera now, hold exactly the scanned frame
 
       const people = merged.filter(
         d => d.classId === PERSON_CLASS_ID && passesThreshold(d, threshold),
@@ -302,7 +296,7 @@ export function DetectorScreen() {
     [onAlert, threshold],
   );
 
-  // Quét ảnh thư viện: cùng model, cùng hai lượt, cùng phép gộp như ảnh chụp.
+  // Scanning a library photo: same model, same two passes, same merge as a shot.
   const onPickPhoto = useCallback(
     async (uri: string) => {
       setPickerOpen(false);
@@ -310,24 +304,24 @@ export function DetectorScreen() {
 
       setScanBusy(true);
       try {
-        // Giải mã trước, chưa bật animation: lúc này chưa có gì để quét cả, mà
-        // phủ animation lên camera preview thì người dùng tưởng đang quét cảnh
-        // trước mặt chứ không phải ảnh vừa chọn.
+        // Decode first, animation off: there is nothing to scan yet, and laying
+        // the animation over the camera preview reads as scanning the scene in
+        // front of you rather than the photo just chosen.
         const image = Skia.Image.MakeImageFromEncoded(await loadImageData(uri));
         if (image == null) throw new Error('không giải mã được ảnh');
 
         setPhoto(image);
         setFrameSize({ w: image.width(), h: image.height() });
         setResult(null);
-        setHidden(new Set());
+        resetFilter();
         setPicked(null);
         resetSave();
         setMode('frozen');
         setScanning(true);
 
-        // Nhường một khung hình cho React vẽ ảnh ra trước. Không có dòng này
-        // thì phần dựng input (Skia + vòng lặp pixel) chạy ngay trong cùng một
-        // nhịp và animation lại hiện lên trước khi thấy ảnh.
+        // Yield a frame so React paints the image first. Without this, building
+        // the input (Skia plus a pixel loop) runs in the same tick and the
+        // animation appears before the image does.
         await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
 
         const found = await scanImage(model, image);
@@ -339,29 +333,30 @@ export function DetectorScreen() {
         ).length;
         if (people > 0) onAlert();
       } catch (e) {
-        console.warn('[DetectorScreen] quét ảnh từ thư viện thất bại', e);
+        console.warn('[DetectorScreen] library photo scan failed', e);
         setPhoto(null);
         setMode('idle');
-        // Báo hẳn ra: bấm vào ảnh mà không có gì xảy ra thì chỉ như app hỏng.
+        // Say it out loud: tapping a photo and having nothing happen just reads
+        // as a broken app.
         Alert.alert('Không quét được ảnh', String(e));
       } finally {
         setScanBusy(false);
         setScanning(false);
       }
     },
-    [model, threshold, onAlert, resetSave],
+    [model, threshold, onAlert, resetSave, resetFilter],
   );
 
-  // Animation quét chạy thêm một lúc để người dùng kịp thấy phản hồi. Bỏ qua
-  // khi đang có việc thật chạy - lúc đó chính công việc quyết định độ dài.
+  // Let the scan animation run on a little so the feedback registers. Skipped
+  // while real work is in flight - then the work itself sets the duration.
   useEffect(() => {
     if (!scanning || scanBusy) return;
     const t = setTimeout(() => setScanning(false), SCAN_ANIM_MS);
     return () => clearTimeout(t);
   }, [scanning, scanBusy]);
 
-  // Box đang mở chi tiết mà bị ẩn đi thì bảng phải đóng theo, không thì nó trỏ
-  // vào thứ không còn trên màn.
+  // If the box whose details are open gets hidden, the sheet has to close with
+  // it, or it points at something no longer on screen.
   useEffect(() => {
     if (picked == null) return;
     if (!passesThreshold(picked, threshold) || hidden.has(picked.classId)) {
@@ -369,100 +364,7 @@ export function DetectorScreen() {
     }
   }, [picked, threshold, hidden]);
 
-  // Quét mới thì mọi box đều là object mới, câu trả lời cũ không còn chỗ bám.
-  useEffect(() => {
-    refinedCache.current.clear();
-  }, [result]);
-
-  // Gọi tên chi tiết cho box đang mở: COCO chỉ có 80 loại thô, model phân loại
-  // có 1000. Chỉ chạy khi người dùng chạm nên không tốn gì lúc quét.
-  useEffect(() => {
-    setRefined(null);
-    if (picked == null || clsModel == null || frameSize == null) return;
-    // ImageNet-1k KHÔNG có class nào là người, nên crop người chỉ có thể ra tên
-    // một món quần áo hoặc bối cảnh. Đừng hỏi câu mà model không trả lời được.
-    if (picked.classId === PERSON_CLASS_ID) return;
-
-    // Đã hỏi box này rồi thì trả lời ngay, không dựng lại input cũng không
-    // chạy lại model - kể cả khi lần trước ra null.
-    const cached = refinedCache.current.get(picked);
-    if (cached !== undefined) {
-      setRefined(cached);
-      return;
-    }
-
-    let cancelled = false;
-    setRefining(true);
-
-    // Nhường đúng một khung hình cho bảng chi tiết vẽ ra trước. Phần dựng input
-    // vẫn đồng bộ, chỉ là ở 224 nó gọn trong một frame thay vì ~126ms như hồi
-    // model để 640 - nên không cần hoãn hẳn ra như trước nữa.
-    const frame = requestAnimationFrame(() => {
-      // Cùng nguồn ảnh với lúc lưu: ảnh thư viện, hoặc ảnh đóng băng trên canvas.
-      const source = photo ?? camera.current?.takeSnapshot();
-      if (source == null) {
-        setRefining(false);
-        return;
-      }
-
-      classifyCrop(
-        clsModel,
-        source,
-        // Box đang ở hệ frame, phải quy về pixel của chính tấm ảnh nguồn.
-        boxToScreen(
-          picked,
-          frameSize.w,
-          frameSize.h,
-          source.width(),
-          source.height(),
-        ),
-      )
-        .then(r => {
-          refinedCache.current.set(picked, r);
-          if (!cancelled) setRefined(r);
-        })
-        // Lỗi thì KHÔNG ghi cache: có thể chỉ là trục trặc một lần.
-        .catch(e => console.warn('[DetectorScreen] không phân loại được', e))
-        .finally(() => {
-          if (!cancelled) setRefining(false);
-        });
-    });
-
-    return () => {
-      cancelled = true;
-      cancelAnimationFrame(frame);
-    };
-  }, [picked, clsModel, photo, frameSize]);
-
-  // Tập mà hàng chip đếm: tắt một class không làm chip của nó biến mất.
-  const scored = useMemo(
-    () => result?.filter(d => passesThreshold(d, threshold)) ?? [],
-    [result, threshold],
-  );
-
-  const visible = useMemo(
-    () => scored.filter(d => !hidden.has(d.classId)),
-    [scored, hidden],
-  );
-
-  const classCounts = useMemo(() => {
-    const byClass = new Map<number, number>();
-    for (const d of scored) {
-      byClass.set(d.classId, (byClass.get(d.classId) ?? 0) + 1);
-    }
-    return [...byClass]
-      .map(([classId, count]) => ({ classId, count }))
-      .sort((a, b) => b.count - a.count);
-  }, [scored]);
-
-  const toggleClass = useCallback((classId: number) => {
-    setHidden(prev => {
-      const next = new Set(prev);
-      if (next.has(classId)) next.delete(classId);
-      else next.add(classId);
-      return next;
-    });
-  }, []);
+  const { camera, device } = cam;
 
   if (device == null) {
     return <StateScreen eyebrow="THIẾT BỊ" title="Không tìm thấy camera" />;
@@ -479,8 +381,9 @@ export function DetectorScreen() {
     );
   }
 
-  // Lỗi lúc còn delegate GPU chỉ là bước trung gian - effect bên trên đang nạp
-  // lại bằng CPU, đừng chớp màn hình lỗi ra rồi thu về ngay.
+  // An error while the GPU delegate is still in play is only an intermediate
+  // step - the effect above is reloading on CPU. Don't flash an error screen and
+  // snatch it back.
   if (
     objectDetection.state === 'loading' ||
     (objectDetection.state === 'error' && delegates.length > 0)
@@ -515,8 +418,8 @@ export function DetectorScreen() {
   const zoomSteps = ZOOM_STEPS.filter(z => z <= device.maxZoom);
 
   const reviewing = mode === 'frozen' && !scanning;
-  // Lúc xem ảnh chỉ còn thanh ngưỡng là có tác dụng, và bảng chi tiết mở thì
-  // nhường hẳn chỗ cho nó.
+  // While reviewing only the threshold slider still does anything, and an open
+  // detail sheet takes the space outright.
   const showTools = (mode === 'idle' || reviewing) && picked == null;
 
   return (
@@ -528,14 +431,14 @@ export function DetectorScreen() {
         isActive={mode !== 'frozen'}
         pixelFormat="yuv"
         constraints={[{ fps: 15 }]}
-        zoom={cameraReady ? zoom : undefined}
-        torchMode={cameraReady ? torch : undefined}
-        onStarted={() => setCameraReady(true)}
-        onStopped={() => setCameraReady(false)}
+        zoom={cam.cameraReady ? cam.zoom : undefined}
+        torchMode={cam.cameraReady ? cam.torch : undefined}
+        onStarted={() => cam.setCameraReady(true)}
+        onStopped={() => cam.setCameraReady(false)}
         onError={e => {
-          // CameraX huỷ lệnh zoom/đèn nếu phiên camera đang khởi động lại
-          // (đổi camera trước/sau, Fast Refresh). Vô hại: lần set sau sẽ ăn.
-          // Chỉ nuốt đúng lỗi này, còn lại vẫn phải thấy được.
+          // CameraX cancels zoom/torch commands while the session is restarting
+          // (flipping the lens, Fast Refresh). Harmless: the next set lands.
+          // Swallow only this one, everything else must stay visible.
           const msg = String(e);
           if (
             msg.includes('OperationCanceledException') ||
@@ -545,20 +448,21 @@ export function DetectorScreen() {
           }
           console.warn('[Camera]', e);
         }}
-        // Xoay buffer về đúng chiều đứng TRƯỚC khi tới tay ta. Không bật thì
-        // frame giữ nguyên chiều cảm biến (nằm ngang khi cầm máy dọc) → model
-        // nhận ảnh người nằm nghiêng 90°, detect kém và box lệch hẳn.
+        // Rotate the buffer upright BEFORE it reaches us. Without this the frame
+        // keeps the sensor's orientation (landscape while the phone is held
+        // upright) → the model sees people lying on their side, detects poorly
+        // and the boxes land badly off.
         enablePhysicalBufferRotation={true}
-        // Cố ý bỏ render sau khi chụp để đóng băng ảnh → tắt cảnh báo.
+        // Skipping the render after capture is deliberate, to freeze the image.
         warnIfRenderSkipped={false}
         onFrame={(frame, render) => {
           'worklet';
 
           const cmd = scanCmd.getDirty();
 
-          // Đã chụp xong: bỏ qua mọi frame sau đó (camera đang tắt dần). Không
-          // render nữa để canvas giữ nguyên đúng frame đã quét - nếu vẫn render,
-          // ảnh hiển thị sẽ là frame mới hơn nhưng box lại của frame cũ.
+          // Capture is done: drop every frame after it (the camera is winding
+          // down). Stop rendering too, so the canvas holds exactly the scanned
+          // frame - otherwise the image shown is newer than the boxes drawn.
           if (cmd === 'frozen') {
             frame.dispose();
             return;
@@ -573,10 +477,11 @@ export function DetectorScreen() {
             const wide = readFrameDetections(model, wideResizer, frame);
             const tight = readFrameDetections(model, tightResizer, frame);
 
-            // Khoá ngay tại đây (không đợi state React vòng sau) để các frame
-            // kế tiếp không quét đè lên ảnh vừa chụp.
+            // Latch right here (rather than waiting a React state round trip) so
+            // later frames cannot scan over the shot just taken.
             scanCmd.setBlocking('frozen');
-            // Gửi kèm kích thước frame: JS cần nó để quy box về hệ khung hình.
+            // Send the frame size along: JS needs it to map boxes into frame
+            // space.
             scheduleOnRN(onScanned, wide, tight, frame.width, frame.height);
           }
 
@@ -588,8 +493,9 @@ export function DetectorScreen() {
         }}
       />
 
-      {/* Ảnh thư viện, đè lên canvas camera đã đóng băng. Vẽ bằng chính SkImage
-          đã đưa cho model để khỏi lệch EXIF; fit="cover" khớp boxToScreen. */}
+      {/* The library photo, over the frozen camera canvas. Drawn from the very
+          SkImage handed to the model so EXIF cannot drift; fit="cover" matches
+          boxToScreen. */}
       {photo != null && (
         <Canvas style={StyleSheet.absoluteFill}>
           <SkiaImage
@@ -603,31 +509,28 @@ export function DetectorScreen() {
         </Canvas>
       )}
 
-      {/* Lấy nét. Nằm dưới mọi nút nên không cướp chạm của chúng. */}
+      {/* Focus. Sits below every button so it cannot steal their taps. */}
       {mode === 'idle' && (
         <Pressable
           style={StyleSheet.absoluteFill}
           accessibilityLabel="Chạm vào khung hình để lấy nét"
           onPress={e => {
             const { locationX, locationY } = e.nativeEvent;
-            setFocusPoint({ x: locationX, y: locationY });
-            camera.current
-              ?.focusTo({ x: locationX, y: locationY })
-              .catch(() => {}); // máy không hỗ trợ lấy nét thì bỏ qua
+            cam.focusAt(locationX, locationY);
           }}
         />
       )}
 
-      {focusPoint != null && (
+      {cam.focusPoint != null && (
         <FocusRing
-          key={`${focusPoint.x},${focusPoint.y}`}
-          x={focusPoint.x}
-          y={focusPoint.y}
+          key={`${cam.focusPoint.x},${cam.focusPoint.y}`}
+          x={cam.focusPoint.x}
+          y={cam.focusPoint.y}
         />
       )}
 
-      {/* Chạm ra ngoài box để đóng bảng chi tiết. Nằm dưới các box nên chạm
-          sang box khác vẫn đổi được, không bị nền nuốt mất. */}
+      {/* Tap outside a box to close the detail sheet. Sits below the boxes so
+          tapping a different box still switches, rather than being swallowed. */}
       {picked != null && (
         <Pressable
           style={StyleSheet.absoluteFill}
@@ -682,22 +585,19 @@ export function DetectorScreen() {
           ]}
         >
           {reviewing && (
-            <ClassFilter
-              counts={classCounts}
-              hidden={hidden}
-              onToggle={toggleClass}
-            />
+            <ClassFilter counts={counts} hidden={hidden} onToggle={toggle} />
           )}
 
           <GlassSurface pill contentStyle={styles.toolRow}>
             {mode === 'idle' && (
               <IconButton
                 name="bolt"
-                label={torch === 'on' ? 'Tắt đèn flash' : 'Bật đèn flash'}
-                active={torch === 'on'}
-                // Camera trước không có đèn nên khoá hẳn, tránh bấm vô ích.
-                disabled={facing === 'front'}
-                onPress={() => setTorch(t => (t === 'on' ? 'off' : 'on'))}
+                label={cam.torch === 'on' ? 'Tắt đèn flash' : 'Bật đèn flash'}
+                active={cam.torch === 'on'}
+                // The front camera has no torch, so lock it out rather than
+                // letting the tap do nothing.
+                disabled={cam.torchDisabled}
+                onPress={cam.toggleTorch}
               />
             )}
 
@@ -715,17 +615,18 @@ export function DetectorScreen() {
               <IconButton
                 name="flip"
                 label="Đổi camera trước sau"
-                onPress={() => {
-                  setFacing(f => (f === 'back' ? 'front' : 'back'));
-                  setTorch('off'); // camera trước không có đèn
-                }}
+                onPress={cam.flip}
               />
             )}
           </GlassSurface>
 
           {mode === 'idle' && (
             <GlassSurface pill contentStyle={styles.zoomRow}>
-              <ZoomSelector steps={zoomSteps} value={zoom} onChange={setZoom} />
+              <ZoomSelector
+                steps={zoomSteps}
+                value={cam.zoom}
+                onChange={cam.setZoom}
+              />
             </GlassSurface>
           )}
         </View>
@@ -744,14 +645,14 @@ export function DetectorScreen() {
               setResult(null);
               setPicked(null);
               setPhoto(null);
-              setHidden(new Set());
+              resetFilter();
               resetSave();
               setMode('idle');
             }}
             onSave={() => {
-              // Ảnh thư viện thì lưu chính nó, ảnh chụp thì lấy từ canvas.
+              // A library photo saves itself; a shot comes off the canvas.
               const source = photo ?? camera.current?.takeSnapshot();
-              // Chỉ nung vào pixel đúng những box đang hiện.
+              // Burn only the boxes currently on screen into the pixels.
               save(
                 source != null && frameSize != null
                   ? annotate(source, visible, frameSize.w, frameSize.h)
@@ -809,7 +710,7 @@ export function DetectorScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
 
-  // --- Màn hình trạng thái ---
+  // --- Status screen ---
   center: {
     flex: 1,
     alignItems: 'center',
@@ -867,14 +768,14 @@ const styles = StyleSheet.create({
   },
   ctaArrow: { color: '#04120A', fontFamily: FONT.semibold, fontSize: 14 },
 
-  // --- Thanh công cụ camera ---
+  // --- Camera toolbar ---
   tools: { position: 'absolute', alignItems: 'center', gap: 10 },
-  // 54 (đáy) + 86 (nút chụp) + 16 + chữ gợi ý ≈ 170 là đỉnh cụm nút chụp,
-  // nên phải đẩy lên hẳn để hai cụm không dính vào nhau.
+  // 54 (bottom) + 86 (shutter) + 16 ≈ 170 is the top of the shutter cluster, so
+  // this has to sit well above it to keep the two groups apart.
   toolsPortrait: { bottom: 208, left: 0, right: 0 },
-  // Lúc xem ảnh nút chụp nhường chỗ cho ReviewBar thấp hơn hẳn, hạ theo.
+  // While reviewing, the shutter gives way to the much lower ReviewBar.
   toolsReviewPortrait: { bottom: 150 },
-  // Nằm ngang: dồn về giữa-trái, chừa cạnh phải cho nút chụp.
+  // Landscape: pull towards centre-left, leaving the right edge to the shutter.
   toolsLandscape: { bottom: 24, left: 0, right: 160 },
   toolRow: {
     flexDirection: 'row',
@@ -884,20 +785,20 @@ const styles = StyleSheet.create({
   },
   zoomRow: { paddingHorizontal: 4, paddingVertical: 3 },
 
-  // --- Bảng chi tiết ---
+  // --- Detail sheet ---
   detailAnchor: { position: 'absolute', alignItems: 'center' },
   detailAnchorPortrait: { bottom: 190, left: 0, right: 0 },
-  // Nằm ngang: nép sang trái, chừa cạnh phải cho nút chụp.
+  // Landscape: tuck left, leaving the right edge to the shutter.
   detailAnchorLandscape: { bottom: 20, left: 24 },
 
-  // --- Nút chụp ---
+  // --- Shutter ---
   controls: {
     position: 'absolute',
     alignItems: 'center',
     justifyContent: 'center',
   },
   controlsPortrait: { bottom: 54, left: 0, right: 0 },
-  // Nằm ngang: nút chụp về cạnh phải, ngang tầm ngón cái khi cầm hai tay.
+  // Landscape: shutter to the right edge, under the thumb in a two-hand grip.
   controlsLandscape: { right: 40, top: 0, bottom: 0 },
   shutterShell: {
     width: 86,

@@ -11,8 +11,8 @@ import { PERSON_CLASS_ID } from '../shared/constants';
 import type { Detection } from '../shared/detections';
 import { COCO_LABELS } from '../shared/labels';
 
-const PERSON_COLOR = '#00E676'; // người - xanh
-const OBJECT_COLOR = '#FFC400'; // vật thể khác - vàng
+const PERSON_COLOR = '#00E676'; // people - green
+const OBJECT_COLOR = '#FFC400'; // other objects - amber
 
 function makePaint(color: string, style: PaintStyle, strokeWidth = 0) {
   const paint = Skia.Paint();
@@ -24,14 +24,15 @@ function makePaint(color: string, style: PaintStyle, strokeWidth = 0) {
 
 const personPaint = makePaint(PERSON_COLOR, PaintStyle.Stroke, 4);
 const objectPaint = makePaint(OBJECT_COLOR, PaintStyle.Stroke, 4);
-// Nền nhãn tô đặc cùng màu box, chữ đen lên trên cho dễ đọc.
+// Solid label backing in the box colour, black text on top for legibility.
 const personFill = makePaint(PERSON_COLOR, PaintStyle.Fill);
 const objectFill = makePaint(OBJECT_COLOR, PaintStyle.Fill);
 const textPaint = makePaint('#000000', PaintStyle.Fill);
 
-// Phải đặt đúng tên family có thật trên máy. 'System'/'Roboto'/chuỗi rỗng đều
-// trả về Typeface trông hợp lệ nhưng KHÔNG có glyph (đo chữ ra width = 0, vẽ ra
-// vô hình). Chỉ 'sans-serif' hoạt động - đây là tên family Android thật sự có.
+// This must name a family that actually exists on the device. 'System',
+// 'Roboto' and the empty string all return a Typeface that looks valid but has
+// NO glyphs (text measures width = 0 and draws invisible). Only 'sans-serif'
+// works - that is a real Android family name.
 const LABEL_FONT_FAMILY = Platform.select({
   android: 'sans-serif',
   default: 'Helvetica',
@@ -44,11 +45,12 @@ const labelFont = Skia.Font(
 );
 
 /**
- * Vẽ box + nhãn lên ảnh đã chụp, trả về ảnh mới để đem đi lưu. Trên màn hình
- * box là View của RN nằm đè lên ảnh, tới lúc lưu mới nung vào pixel.
+ * Draws boxes + labels onto the captured image and returns a new image to save.
+ * On screen the boxes are RN Views laid over the photo; only at save time do
+ * they get burned into pixels.
  *
- * Không tạo được surface thì trả lại ảnh trần: lưu ảnh không box vẫn hơn là
- * báo lỗi và mất luôn tấm ảnh.
+ * If the surface cannot be created, hand back the bare image: saving a photo
+ * without boxes beats erroring out and losing the photo entirely.
  */
 export function annotate(
   photo: SkImage,
@@ -65,8 +67,8 @@ export function annotate(
   const canvas = surface.getCanvas();
   canvas.drawImage(photo, 0, 0);
 
-  // Cỡ chữ theo độ phân giải ảnh, không phải pixel màn hình - nếu không nhãn
-  // sẽ bé tí trên ảnh lớn.
+  // Size the text off the image resolution, not screen pixels - otherwise the
+  // labels come out tiny on a large photo.
   const fontSize = Math.max(16, Math.round(Math.min(w, h) * 0.045));
   labelFont.setSize(fontSize);
   const padX = fontSize * 0.35;
@@ -85,7 +87,8 @@ export function annotate(
     const text = `${name} ${Math.round(d.score * 100)}%`;
     const textW = labelFont.measureText(text).width;
 
-    // Nhãn nằm trên box; nếu box sát mép trên thì lật xuống trong box.
+    // The label sits above the box; if the box hugs the top edge, flip it
+    // inside instead.
     const chipY = r.top - chipH >= 0 ? r.top - chipH : r.top;
     canvas.drawRect(
       Skia.XYWHRect(r.left, chipY, textW + padX * 2, chipH),

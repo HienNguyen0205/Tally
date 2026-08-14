@@ -25,12 +25,12 @@ function Corner({ style }: { style: object }) {
 }
 
 /**
- * Lớp phủ báo hiệu đang quét: khung ngắm 4 góc bung ra + vạch quét chạy dọc.
- * Chỉ dùng transform/opacity để chạy trên GPU, không gây reflow.
+ * The scanning overlay: four corner brackets springing open plus a line sweeping
+ * down. Transform/opacity only, so it runs on the GPU and causes no reflow.
  */
 export function ScanOverlay() {
   const { width, height } = useWindowDimensions();
-  // Theo cạnh ngắn: dùng % cố định thì xoay ngang khung sẽ bẹp dí.
+  // Sized off the short edge: a fixed % squashes flat in landscape.
   const inset = Math.round(Math.min(width, height) * 0.11);
 
   const sweep = useSharedValue(0);
@@ -50,7 +50,8 @@ export function ScanOverlay() {
 
   const sweepStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: sweep.value * (height + GLOW_H) }],
-    // Mờ dần ở hai đầu hành trình để vạch không bị "cụt" ở mép màn hình.
+    // Fade at both ends of the travel so the line does not get cut off at the
+    // screen edge.
     opacity: Math.sin(sweep.value * Math.PI) * 0.9 + 0.1,
   }));
 

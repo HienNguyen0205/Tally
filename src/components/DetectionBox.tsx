@@ -10,9 +10,10 @@ import type { ScreenRect } from '../shared/boxLayout';
 const CHIP_H = 20;
 
 /**
- * Một box trên ảnh đã quét: viền màu, nhãn, và cũng là vùng chạm để mở bảng
- * chi tiết. Vẽ bằng View chứ không nung vào ảnh nên đổi ngưỡng là hiện/ẩn ngay;
- * lúc lưu file mới nung vào pixel (`src/annotate.ts`).
+ * One box over a scanned image: coloured outline, label, and the hit region that
+ * opens the detail sheet. Drawn as Views rather than burned into the image, so
+ * changing the threshold shows/hides instantly; the burn-in happens only at save
+ * time (`src/detection/annotate.ts`).
  */
 export function DetectionBox({
   detection,
@@ -30,7 +31,8 @@ export function DetectionBox({
   const percent = Math.round(detection.score * 100);
   const name = labelVi(detection.classId);
 
-  // Nhãn nằm trên box; box sát mép trên màn thì lật xuống nằm trong box.
+  // The label sits above the box; if the box hugs the top of the screen, flip it
+  // down inside instead.
   const chipAbove = rect.top >= CHIP_H;
 
   return (
@@ -70,7 +72,8 @@ const styles = StyleSheet.create({
   boxSelected: { borderWidth: 3 },
   chip: {
     position: 'absolute',
-    // Thò ra ngoài đúng bằng bề dày viền để mép trái nhãn thẳng với mép box.
+    // Overhang by exactly the border width so the label's left edge lines up
+    // with the box's.
     left: -2,
     height: CHIP_H,
     justifyContent: 'center',

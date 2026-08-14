@@ -6,19 +6,21 @@ import { BEZEL_PAD, BLUR, COLORS, RADIUS } from '../shared/theme';
 
 interface Props {
   children: React.ReactNode;
-  /** Bo tròn hoàn toàn thành viên thuốc thay vì thẻ bo góc. */
+  /** Fully round into a pill instead of a rounded card. */
   pill?: boolean;
-  /** Style cho vỏ ngoài (vị trí, kích thước). */
+  /** Style for the outer shell (position, size). */
   style?: ViewStyle | ViewStyle[];
-  /** Style cho lõi trong (padding nội dung). */
+  /** Style for the inner core (content padding). */
   contentStyle?: ViewStyle | ViewStyle[];
 }
 
 /**
- * Bề mặt kính 2 lớp (double-bezel): vỏ ngoài trong mờ ôm lấy lõi có blur thật.
+ * A double-bezel glass surface: a translucent outer shell wrapping a core with
+ * real blur.
  *
- * Bo góc đồng tâm: lõi trong = bán kính vỏ trừ đúng phần đệm, để hai đường cong
- * song song nhau. Để bằng nhau là lỗi thị giác dễ thấy nhất của thẻ lồng thẻ.
+ * Concentric corners: the core's radius is the shell's minus exactly the padding,
+ * so the two curves stay parallel. Leaving them equal is the most visible
+ * giveaway of a card nested in a card.
  */
 export function GlassSurface({ children, pill, style, contentStyle }: Props) {
   const shellRadius = pill ? RADIUS.pillShell : RADIUS.shell;
@@ -33,8 +35,8 @@ export function GlassSurface({ children, pill, style, contentStyle }: Props) {
           style={StyleSheet.absoluteFill}
           blurType={BLUR.type}
           blurAmount={BLUR.amount}
-          // Android mặc định phủ thêm một lớp màu lên trên blur - tắt đi để
-          // tự kiểm soát độ đậm bằng backgroundColor của lõi.
+          // Android lays an extra colour wash over the blur by default - turn
+          // it off and control the depth with the core's backgroundColor.
           overlayColor="transparent"
           pointerEvents="none"
         />
@@ -55,7 +57,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.core,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: COLORS.coreHighlight,
-    // Cắt lớp blur theo đúng góc bo, nếu không nó sẽ tràn ra thành hình vuông.
+    // Clip the blur to the corner radius, or it spills out square.
     overflow: 'hidden',
   },
 });

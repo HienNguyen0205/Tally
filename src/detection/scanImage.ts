@@ -8,13 +8,14 @@ import { mergeDetections, type Detection } from '../shared/detections';
 import { parseDetections } from './runModel';
 
 /**
- * Quét một ảnh có sẵn, trả về detection ở hệ toạ độ của ảnh (0..1).
+ * Scans an existing image, returning detections in the image's own space (0..1).
  *
- * Chạy đúng hai lượt rồi gộp như đường camera - resizer chỉ nhận Frame nên ở
- * đây phải tự dựng input bằng Skia.
+ * Runs the same two passes and the same merge as the camera path - the resizer
+ * only accepts a Frame, so the input has to be built with Skia here.
  *
- * Dùng `run` bất đồng bộ chứ không `runSync`: đây là JS thread, mà hai lượt
- * suy luận 640² đủ lâu để chặn cả việc React vẽ tấm ảnh vừa chọn ra màn hình.
+ * Uses async `run` rather than `runSync`: this is the JS thread, and two 640²
+ * inferences take long enough to block React from even painting the photo the
+ * user just picked.
  */
 export async function scanImage(
   model: TensorflowModel,

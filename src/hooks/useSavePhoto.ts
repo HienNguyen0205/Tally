@@ -1,7 +1,8 @@
 import { useCallback, useState } from 'react';
 import { Platform, PermissionsAndroid } from 'react-native';
-// Chú ý: Skia và nitro-image cùng có kiểu tên `ImageFormat` nhưng khác hẳn nhau
-// (Skia là enum số, nitro-image là chuỗi 'jpg'), nên đổi tên khi import.
+// Careful: Skia and nitro-image both export a type called `ImageFormat`, but
+// they are nothing alike (Skia's is a numeric enum, nitro-image's is the string
+// 'jpg'), so rename on import.
 import { ImageFormat as SkImageFormat } from '@shopify/react-native-skia';
 import type { SkImage } from '@shopify/react-native-skia';
 import { Images } from 'react-native-nitro-image';
@@ -10,10 +11,10 @@ import { CameraRoll } from '@react-native-camera-roll/camera-roll';
 export type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
 /**
- * Lưu ảnh đã gắn box vào thư viện ảnh của máy.
+ * Saves the annotated image into the device's photo library.
  *
- * Skia chỉ cho ra mảng byte, còn CameraRoll lại cần đường dẫn file - nên phải
- * đi qua nitro-image (đã có sẵn trong dự án) để ghi ra file tạm trước.
+ * Skia only hands back a byte array while CameraRoll wants a file path - so it
+ * routes through nitro-image (already a dependency) to write a temp file first.
  */
 export function useSavePhoto() {
   const [state, setState] = useState<SaveState>('idle');
@@ -27,7 +28,7 @@ export function useSavePhoto() {
     try {
       setState('saving');
 
-      // Từ API 29 trở lên MediaStore tự lo, chỉ máy cũ mới phải xin quyền.
+      // From API 29 up MediaStore handles this; only older devices must ask.
       if (Platform.OS === 'android' && Number(Platform.Version) <= 28) {
         const granted = await PermissionsAndroid.request(
           PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
@@ -50,7 +51,7 @@ export function useSavePhoto() {
       await CameraRoll.saveAsset(`file://${path}`, { type: 'photo' });
       setState('saved');
     } catch (e) {
-      console.warn('[useSavePhoto] lưu ảnh thất bại', e);
+      console.warn('[useSavePhoto] saving the photo failed', e);
       setState('error');
     }
   }, []);

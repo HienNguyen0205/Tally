@@ -8,3 +8,8 @@
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
 # Add any project specific keep options here:
+
+# litert/TFLite được gọi qua JNI FindClass nên R8 không thấy tham chiếu và sẽ
+# strip mất. Không có hai dòng này thì release crash khi load model.
+-keep class org.tensorflow.lite.** { *; }
+-keep class com.google.ai.edge.litert.** { *; }

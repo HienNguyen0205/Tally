@@ -21,14 +21,16 @@ export interface ClassCount {
 }
 
 /**
- * Bộ lọc theo loại vật thể: thu gọn thành viên thuốc tóm tắt, chạm mới bung ra
- * bảng chip. Chip chỉ gồm những class có trong ảnh, không phải 90 class COCO.
+ * Filter by object class: collapsed into a summary pill, tapped to reveal the
+ * chip panel. The chips cover only the classes present in the image, not all of
+ * COCO.
  *
- * Lọc ở đây là lọc hiển thị, giống thanh ngưỡng - model đã quét hết rồi.
+ * This filters the display, like the threshold slider - the model already
+ * scanned everything.
  *
- * Bảng chip là bề mặt RIÊNG nổi lên trên chứ không nằm chung với viên thuốc:
- * chung một bề mặt thì lúc đóng, hàng chip vẫn kéo giãn bề ngang nên thu gọn
- * xong vẫn rộng nguyên.
+ * The chip panel is its OWN surface floating above, not shared with the pill:
+ * on one surface the chip row keeps stretching the width even while closed, so
+ * collapsing leaves it just as wide.
  */
 export function ClassFilter({
   counts,
@@ -122,7 +124,8 @@ export function ClassFilter({
           <Icon
             name="filter"
             size={13}
-            // Sáng lên khi đang lọc, để thu gọn rồi vẫn biết là có class bị ẩn.
+            // Lit while filtering, so a collapsed pill still shows that
+            // something is hidden.
             color={hidden.size === 0 ? COLORS.textMuted : COLORS.accent}
             strokeWidth={1.6}
           />
@@ -142,7 +145,7 @@ export function ClassFilter({
 }
 
 const styles = StyleSheet.create({
-  // Chặn bề ngang ở đây để chip xuống dòng thay vì tràn ra mép màn hình.
+  // Cap the width here so chips wrap instead of running off the screen edge.
   wrap: { alignItems: 'center', gap: 8, maxWidth: '92%' },
 
   headerCore: { paddingHorizontal: 6, paddingVertical: 4 },
@@ -170,8 +173,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 11,
     borderRadius: 999,
     backgroundColor: 'rgba(255,255,255,0.10)',
-    // Ôm trọn tên; hết chỗ thì cả chip xuống dòng chứ không bị bóp rồi cắt
-    // chữ thành "...".
+    // Hug the full name; when space runs out the whole chip wraps rather than
+    // being squeezed and truncated.
     flexShrink: 0,
   },
   chipOff: { backgroundColor: 'transparent' },

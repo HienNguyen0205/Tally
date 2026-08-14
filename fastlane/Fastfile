@@ -1,0 +1,58 @@
+default_platform(:android)
+
+# Signing is entirely Gradle's business, both locally and in CI - see
+# android/app/build.gradle. Locally it reads the TALLY_* properties from
+# ~/.gradle/gradle.properties; in CI they arrive as ORG_GRADLE_PROJECT_* env
+# vars, which Gradle picks up on its own. Nothing to wire up here.
+platform :android do
+  desc 'Build the debug APK and install it on the connected device'
+  lane :debug do
+    gradle(project_dir: 'android', task: 'installDebug')
+  end
+
+  desc 'Build signed release APKs, one per phone ABI'
+  lane :release do
+    # The clean is not optional. React Native's asset-copy task only ever adds
+    # to android/app/build/generated/res/react/, so a model deleted from
+    # assets/models keeps shipping in the APK until that directory is wiped.
+    gradle(project_dir: 'android', task: 'clean')
+    gradle(
+      project_dir: 'android',
+      task: 'assembleRelease',
+      properties: { 'splitApks' => true },
+    )
+
+    lane_context[SharedValues::GRADLE_ALL_APK_OUTPUT_PATHS].each do |apk|
+      UI.success("#{apk} (#{(File.size(apk) / 1e6).round(1)} MB)")
+    end
+  end
+
+  desc 'Build the App Bundle for the Play Store'
+  lane :bundle do
+    gradle(project_dir: 'android', task: 'clean')
+    gradle(project_dir: 'android', task: 'bundleRelease')
+  end
+
+  desc 'Build signed APKs and publish them as a GitHub release'
+  lane :github do |options|
+    tag = options[:tag] || ENV['GITHUB_REF_NAME']
+    UI.user_error!('No tag: pass tag:vX.Y.Z or run from a tag build') if tag.to_s.empty?
+
+    token = ENV['GH_TOKEN'] || ENV['GITHUB_TOKEN']
+    UI.user_error!('No GH_TOKEN/GITHUB_TOKEN in the environment') if token.to_s.empty?
+
+    release
+
+    set_github_release(
+      # GITHUB_REPOSITORY is set by Actions; the literal is the local fallback.
+      # Reading it means a fork publishes to the fork, not here.
+      repository_name: ENV['GITHUB_REPOSITORY'] || 'HienNguyen0205/Tally',
+      api_token: token,
+      tag_name: tag,
+      name: tag,
+      description: "On-device object detection. Install the APK matching your phone's CPU: " \
+                   'arm64-v8a for anything from roughly 2017 onward, armeabi-v7a for older devices.',
+      upload_assets: lane_context[SharedValues::GRADLE_ALL_APK_OUTPUT_PATHS],
+    )
+  end
+end

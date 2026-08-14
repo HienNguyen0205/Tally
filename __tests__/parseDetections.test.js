@@ -8,12 +8,13 @@ const {
 const CHANNELS = NUM_CLASSES + 4;
 
 /**
- * Dựng output giả đúng bố cục [1, 84, N] của bản export không end2end: xếp theo
- * KÊNH, nên giá trị kênh c tại anchor a nằm ở `c * N + a`.
+ * Builds a fake output in the exact [1, 84, N] layout of a non-end2end export:
+ * CHANNEL-major, so channel c at anchor a sits at `c * N + a`.
  *
- * Đảo nhầm sang `a * 84 + c` là lỗi không có thông báo nào - box vẫn ra, chỉ ra
- * sai chỗ - nên phải khoá bằng test. Bản export CÓ end2end lại cho ra
- * `[1, 300, 6]` hoàn toàn khác; kiểm shape trước khi đổi model.
+ * Getting it backwards as `a * 84 + c` is a bug with no error message - boxes
+ * still come out, just in the wrong places - so it gets pinned by test. An
+ * end2end export instead produces a completely different `[1, 300, 6]`; check
+ * the shape before swapping models.
  */
 function buildOutput(anchors, boxes) {
   const out = new Float32Array(CHANNELS * anchors);
@@ -31,8 +32,8 @@ function buildOutput(anchors, boxes) {
   return [out.buffer];
 }
 
-describe('giải mã output anchor thô', () => {
-  it('đọc đúng ô theo bố cục kênh và đổi tâm+kích thước thành hai góc', () => {
+describe('decoding raw anchor output', () => {
+  it('reads the channel layout and turns centre+size into two corners', () => {
     const found = parseDetections(
       buildOutput(10, [
         { anchor: 5, cx: 0.5, cy: 0.4, w: 0.2, h: 0.6, classId: 3, score: 0.9 },
@@ -48,7 +49,7 @@ describe('giải mã output anchor thô', () => {
     expect(found[0].ymax).toBeCloseTo(0.7);
   });
 
-  it('mỗi anchor chỉ giữ class điểm cao nhất', () => {
+  it('keeps only the top-scoring class per anchor', () => {
     const anchors = 4;
     const out = new Float32Array(CHANNELS * anchors);
     out[0 * anchors + 1] = 0.5; // cx
@@ -56,7 +57,7 @@ describe('giải mã output anchor thô', () => {
     out[2 * anchors + 1] = 0.1; // w
     out[3 * anchors + 1] = 0.1; // h
     out[(4 + 7) * anchors + 1] = 0.4;
-    out[(4 + 12) * anchors + 1] = 0.85; // class thắng
+    out[(4 + 12) * anchors + 1] = 0.85; // the winner
     out[(4 + 20) * anchors + 1] = 0.3;
 
     const found = parseDetections([out.buffer]);
@@ -65,7 +66,7 @@ describe('giải mã output anchor thô', () => {
     expect(found[0].score).toBeCloseTo(0.85);
   });
 
-  it('bỏ anchor dưới sàn cứng', () => {
+  it('drops anchors below the hard floor', () => {
     const found = parseDetections(
       buildOutput(6, [
         {
@@ -82,7 +83,7 @@ describe('giải mã output anchor thô', () => {
     expect(found).toHaveLength(0);
   });
 
-  it('trả về theo điểm giảm dần và cắt ở MAX_DETECTIONS', () => {
+  it('returns descending scores and truncates at MAX_DETECTIONS', () => {
     const anchors = MAX_DETECTIONS + 30;
     const boxes = [];
     for (let a = 0; a < anchors; a++) {
@@ -93,7 +94,7 @@ describe('giải mã output anchor thô', () => {
         w: 0.05,
         h: 0.05,
         classId: a % NUM_CLASSES,
-        // Anchor sau điểm cao hơn, để chắc chắn là có sắp xếp thật.
+        // Later anchors score higher, to prove a real sort happened.
         score: 0.2 + (a / anchors) * 0.7,
       });
     }
@@ -101,7 +102,7 @@ describe('giải mã output anchor thô', () => {
     const found = parseDetections(buildOutput(anchors, boxes));
     expect(found).toHaveLength(MAX_DETECTIONS);
     expect(found[0].score).toBeGreaterThan(found[found.length - 1].score);
-    // Cắt phải giữ lại nhóm điểm CAO nhất chứ không phải nhóm đầu mảng.
+    // Truncation must keep the HIGHEST-scoring group, not the head of the array.
     expect(found[0].score).toBeCloseTo(0.2 + ((anchors - 1) / anchors) * 0.7);
   });
 });

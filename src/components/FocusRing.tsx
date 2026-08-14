@@ -14,8 +14,8 @@ const SIZE = 76;
 const ease = Easing.bezier(...EASE_OUT_EXPO);
 
 /**
- * Vòng lấy nét co lại tại điểm vừa chạm rồi mờ dần - phản hồi cho biết máy đã
- * nhận lệnh lấy nét. Đặt `key` theo toạ độ để mỗi lần chạm là một vòng mới.
+ * A focus ring that contracts on the tapped point then fades - the feedback that
+ * the focus command landed. Keyed by coordinate so every tap makes a fresh ring.
  */
 export function FocusRing({ x, y }: { x: number; y: number }) {
   const anim = useSharedValue(0);

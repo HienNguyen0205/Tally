@@ -16,12 +16,12 @@ import { GlassSurface } from './GlassSurface';
 const ease = Easing.bezier(...EASE_OUT_EXPO);
 
 /**
- * Bảng chi tiết của một vật thể: tên, tên chi tiết hơn nếu đoán được, và độ
- * tin cậy.
+ * Detail sheet for one object: its name, a more specific name where one can be
+ * guessed, and the confidence.
  *
- * Một hàng ngang duy nhất, ba khối: tên - viên điểm - nút đóng. Điểm nằm trong
- * viên thuốc nhuộm theo màu class chứ không phải một cột nhãn+số, để nó vừa là
- * số liệu vừa là thứ nối bảng này với cái box vừa chạm.
+ * A single row of three blocks: name - score pill - close. The score sits in a
+ * pill tinted to the class colour rather than a label+number column, so it reads
+ * both as the figure and as the thread tying this sheet to the box just tapped.
  */
 export function DetailSheet({
   classId,
@@ -32,7 +32,7 @@ export function DetailSheet({
 }: {
   classId: number;
   score: number;
-  /** Tên chi tiết do model phân loại đoán, null nếu chưa/không có. */
+  /** The classifier's guess, null when absent or not yet in. */
   refined?: { label: string; score: number } | null;
   refining?: boolean;
   onClose: () => void;
@@ -71,7 +71,7 @@ export function DetailSheet({
           <Text style={styles.title} numberOfLines={1}>
             {vi}
           </Text>
-          {/* Dòng phụ ưu tiên tên chi tiết từ model phân loại - nó nói được
+          {/* The subline prefers the classifier's name - it says far more
               nhiều hơn hẳn tên gốc tiếng Anh của COCO. */}
           {refining === true ? (
             <Text style={[styles.subtitle, styles.subtitleWaiting]}>
@@ -98,7 +98,8 @@ export function DetailSheet({
           </Text>
         </Animated.View>
 
-        {/* Dấu đóng lồng trong vòng tròn riêng, không đứng trần cạnh chữ. */}
+        {/* The close glyph gets its own circle rather than sitting bare next
+            to the text. */}
         <Pressable
           style={styles.close}
           accessibilityRole="button"
@@ -123,7 +124,8 @@ const styles = StyleSheet.create({
     paddingRight: 10,
   },
 
-  // Rộng hơn tên COCO cần, vì tên chi tiết mới là thứ đáng đọc ở đây.
+  // Wider than a COCO name needs, because the refined name is what earns the
+  // reading here.
   textCol: { maxWidth: 168 },
   title: {
     color: COLORS.textPrimary,

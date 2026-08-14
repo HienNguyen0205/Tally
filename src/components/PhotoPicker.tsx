@@ -23,13 +23,14 @@ const COLUMNS = 3;
 const GAP = 2;
 
 /**
- * Android 13 tách quyền đọc ảnh ra khỏi quyền đọc bộ nhớ chung; máy cũ hơn vẫn
- * phải xin READ_EXTERNAL_STORAGE. iOS để Photos framework tự hỏi lúc truy cập.
+ * Android 13 split photo access out of general storage access; older devices
+ * still need READ_EXTERNAL_STORAGE. On iOS the Photos framework asks by itself
+ * on first access.
  *
- * Từ Android 14 người dùng có thể chỉ cho xem MỘT SỐ ảnh. Khi đó hệ thống vẫn
- * báo READ_MEDIA_IMAGES là "granted" (cờ REVOKED_COMPAT, để code cũ khỏi vỡ)
- * nhưng `getPhotos` chỉ trả về đúng những ảnh đã chọn - có thể là không ảnh
- * nào. Gọi lại hàm này sẽ mở lại bảng chọn để thêm ảnh.
+ * From Android 14 the user can grant access to SOME photos only. The system
+ * still reports READ_MEDIA_IMAGES as "granted" (the REVOKED_COMPAT flag, so old
+ * code keeps working) but `getPhotos` returns exactly the chosen photos - which
+ * may be none at all. Calling this again reopens the picker to add more.
  */
 async function ensurePhotoPermission(): Promise<boolean> {
   if (Platform.OS !== 'android') return true;
@@ -48,8 +49,9 @@ function asFileUri(path: string): string {
 }
 
 /**
- * Đường dẫn để HIỂN THỊ trong lưới. iOS trả 'ph://<id>' - định danh Photos,
- * không phải file - nhưng <Image> hiểu được nhờ handler camera-roll cài sẵn.
+ * The URI for DISPLAY in the grid. iOS returns 'ph://<id>' - a Photos
+ * identifier, not a file - but <Image> understands it via the handler
+ * camera-roll installs.
  */
 function displayUri(image: { uri: string; filepath: string | null }): string {
   const path = image.filepath;
@@ -58,16 +60,16 @@ function displayUri(image: { uri: string; filepath: string | null }): string {
 }
 
 /**
- * Đọc byte của ảnh đã chọn thành `SkData` để đưa cho Skia.
+ * Reads the chosen photo's bytes into `SkData` for Skia.
  *
- * `Skia.Data.fromURI` chỉ nạp được file/URL thật, mà picker lại trả về định
- * danh của kho ảnh hệ thống - và tệ hơn là nó **treo im lặng** với những URI đó
- * chứ không báo lỗi. Nên phải quy về byte trước:
+ * `Skia.Data.fromURI` only loads real files and URLs, while the picker hands
+ * back system photo-store identifiers - and worse, it **hangs silently** on
+ * those URIs rather than reporting an error. So resolve to bytes first:
  *
- * - Android: `content://…` đọc bằng `fetch` (tầng mạng của RN hiểu scheme này,
- *   cùng cơ chế giúp <Image> hiển thị được ảnh trong lưới).
- * - iOS: `ph://<id>` là định danh Photos, nhờ camera-roll ghi ra file tạm,
- *   tiện thể chuyển HEIC (mặc định của iPhone) sang JPEG.
+ * - Android: read `content://…` with `fetch` (RN's networking layer understands
+ *   the scheme, the same mechanism that lets <Image> show the grid thumbnails).
+ * - iOS: `ph://<id>` is a Photos identifier, so have camera-roll write a temp
+ *   file, which also converts HEIC (the iPhone default) to JPEG.
  */
 export async function loadImageData(uri: string): Promise<SkData> {
   if (uri.startsWith('ph://')) {
@@ -93,7 +95,7 @@ export async function loadImageData(uri: string): Promise<SkData> {
   return Skia.Data.fromBase64(dataUrl.slice(dataUrl.indexOf(',') + 1));
 }
 
-/** Lưới ảnh gần đây để chọn một tấm đem đi quét. */
+/** A grid of recent photos to pick one from for scanning. */
 export function PhotoPicker({
   onPick,
   onClose,
@@ -105,7 +107,7 @@ export function PhotoPicker({
   const insets = useSafeAreaInsets();
 
   const [uris, setUris] = useState<string[] | null>(null);
-  // Android 14+: người dùng chỉ cho xem một số ảnh, không phải cả thư viện.
+  // Android 14+: the user granted some photos, not the whole library.
   const [limited, setLimited] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -153,7 +155,7 @@ export function PhotoPicker({
           </Pressable>
         </View>
 
-        {/* Chỉ được xem một phần thư viện: phải có lối mở lại bảng chọn, không
+        {/* Partial library access: there has to be a way back to the picker,
             thì người dùng kẹt hẳn khi lỡ không chọn ảnh nào. */}
         {limited && uris != null && uris.length > 0 && (
           <Pressable style={styles.notice} onPress={load}>

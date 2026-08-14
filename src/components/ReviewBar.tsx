@@ -21,8 +21,8 @@ const SAVE_TEXT: Partial<Record<SaveState, string>> = {
 };
 
 /**
- * Thanh điều khiển khi xem ảnh đã quét: chỉ hai nút icon nhỏ thay vì nút chụp
- * cỡ lớn - lúc này khung hình mới là thứ cần được nhìn.
+ * The control bar while reviewing a scanned image: two small icon buttons rather
+ * than the full-size shutter - by now the image is what wants looking at.
  */
 export function ReviewBar({
   saveState,
@@ -50,7 +50,7 @@ export function ReviewBar({
 
   return (
     <View style={styles.wrap}>
-      {/* Giữ chỗ sẵn cho dòng trạng thái để hàng nút không bị nhảy vị trí. */}
+      {/* Reserve the status line's space so the button row cannot jump. */}
       <Animated.View style={[styles.statusSlot, statusStyle]}>
         <Text
           style={[styles.status, saveState === 'saved' && styles.statusDone]}

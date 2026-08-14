@@ -20,7 +20,7 @@ interface Props {
   onPress: () => void;
 }
 
-/** Nút icon tròn: lún xuống khi nhấn, nền sáng lên khi đang bật. */
+/** Round icon button: sinks on press, background lifts while active. */
 export function IconButton({
   name,
   label,
@@ -30,7 +30,7 @@ export function IconButton({
 }: Props) {
   const press = useSharedValue(0);
   const on = useSharedValue(active ? 1 : 0);
-  // Trong effect, không phải giữa thân render - Reanimated cảnh báo đúng.
+  // In an effect, not mid-render - Reanimated is right to warn about that.
   useEffect(() => {
     on.value = withTiming(active ? 1 : 0, { duration: 280, easing: ease });
   }, [active, on]);

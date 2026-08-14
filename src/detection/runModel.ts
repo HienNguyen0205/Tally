@@ -6,24 +6,26 @@ import { MAX_DETECTIONS, NUM_CLASSES, RAW_SCORE_FLOOR } from '../shared/constant
 import type { Detection } from '../shared/detections';
 
 /**
- * Đọc output thô của YOLO26 thành danh sách detection. Toạ độ ở hệ ô vuông
- * model nhìn thấy, chưa quy về khung hình - xem `toFrameBox`.
+ * Reads YOLO26's raw output into a detection list. Coordinates are in the square
+ * the model saw, not yet mapped onto the frame - see `toFrameBox`.
  *
- * Model xuất với `end2end: false` nên output là `[1, 84, 8400]`:
- *   84 = 4 (cx, cy, w, h) + 80 điểm class
- *   8400 = 80² + 40² + 20² anchor của ba tầng stride
- * Xếp theo kênh, nên giá trị kênh `c` tại anchor `a` nằm ở `c * anchors + a`,
- * KHÔNG phải `a * 84 + c`. Đảo hai cái này thì box vẫn ra, chỉ sai chỗ.
+ * The model is exported with `end2end: false`, so the output is `[1, 84, 8400]`:
+ *   84 = 4 (cx, cy, w, h) + 80 class scores
+ *   8400 = 80² + 40² + 20² anchors across the three stride levels
+ * It is channel-major, so channel `c` at anchor `a` sits at `c * anchors + a`,
+ * NOT `a * 84 + c`. Swap the two and boxes still come out, just in wrong places.
  *
- * Toạ độ đã chuẩn hoá 0..1 sẵn (graph bọc trong `_NormalizeCoords`) và điểm
- * class đã qua sigmoid, nên hậu xử lý chỉ còn NMS - do `mergeDetections` lo.
+ * Coordinates arrive already normalised to 0..1 (the graph is wrapped in
+ * `_NormalizeCoords`) and class scores are already sigmoided, so the only
+ * post-processing left is NMS - handled by `mergeDetections`.
  *
- * Bản export CÓ end2end thì output thành `[1, 300, 6]`, mỗi hàng hai góc + điểm
- * + class và đã NMS sẵn. Hai định dạng không liên quan gì nhau, mà nhầm thì
- * không có lỗi nào báo - kiểm bằng `tools/inspect_tflite.py` trước khi đổi.
+ * An end2end export instead emits `[1, 300, 6]`, each row two corners + score +
+ * class, already NMS'd. The two formats have nothing to do with each other, and
+ * mixing them up raises no error - check with `tools/inspect_tflite.py` before
+ * swapping models.
  *
- * Đánh dấu 'worklet' vì đường camera gọi trong worklet, đường quét ảnh gọi
- * thẳng trên JS thread.
+ * Marked 'worklet' because the camera path calls it inside a worklet while the
+ * image path calls it straight on the JS thread.
  */
 export function parseDetections(outputs: readonly ArrayBuffer[]): Detection[] {
   'worklet';
@@ -33,7 +35,7 @@ export function parseDetections(outputs: readonly ArrayBuffer[]): Detection[] {
 
   const found: Detection[] = [];
   for (let a = 0; a < anchors; a++) {
-    // Tìm class điểm cao nhất của anchor này.
+    // Find this anchor's top-scoring class.
     let best = -1;
     let bestScore = RAW_SCORE_FLOOR;
     for (let c = 0; c < NUM_CLASSES; c++) {
@@ -45,7 +47,7 @@ export function parseDetections(outputs: readonly ArrayBuffer[]): Detection[] {
     }
     if (best < 0) continue;
 
-    // Box của YOLO là tâm + kích thước, không phải hai góc.
+    // YOLO boxes are centre + size, not two corners.
     const cx = out[a]!;
     const cy = out[anchors + a]!;
     const w = out[2 * anchors + a]!;
@@ -61,13 +63,13 @@ export function parseDetections(outputs: readonly ArrayBuffer[]): Detection[] {
     });
   }
 
-  // Không có NMS trong graph nên số box thô có thể rất lớn, mà NMS là O(n²).
-  // Cắt bớt theo điểm trước khi đưa sang gộp.
+  // With no NMS in the graph the raw box count can be huge, and NMS is O(n²).
+  // Trim by score before handing it on to be merged.
   found.sort((x, y) => y.score - x.score);
   return found.length > MAX_DETECTIONS ? found.slice(0, MAX_DETECTIONS) : found;
 }
 
-/** Chạy model một lượt trên frame của camera (gọi trong worklet). */
+/** Runs one pass over a camera frame (called inside a worklet). */
 export function readFrameDetections(
   model: TensorflowModel,
   resizer: Resizer,
@@ -82,16 +84,17 @@ export function readFrameDetections(
   try {
     outputs = model.runSync([buffer]);
   } catch (e) {
-    // "Failed to run TFLite Model" một mình không nói được gì. Kèm luôn ba số
-    // liệu quyết định: cỡ buffer đưa vào, cỡ model đòi, và delegate đang bật.
+    // "Failed to run TFLite Model" on its own says nothing. Attach the three
+    // numbers that decide it: the buffer handed in, what the model wants, and
+    // which delegate is active.
     throw new Error(
       `${String(e)} | buffer ${buffer.byteLength}B` +
         ` | inputs ${JSON.stringify(model.inputs)}` +
         ` | delegates ${JSON.stringify(model.delegates)}`,
     );
   } finally {
-    // Phải dispose kể cả khi hỏng: resizer từ chối chạy tiếp nếu GPUFrame
-    // trước đó còn treo.
+    // Must dispose even on failure: the resizer refuses to run again while a
+    // previous GPUFrame is still outstanding.
     resized.dispose();
   }
 

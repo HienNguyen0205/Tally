@@ -21,8 +21,9 @@ const SCALE = SIZE / VIEWPORT;
 const DRAW_MS = 520;
 const GAP_MS = 130;
 
-// Cùng hình với icon launcher (res/drawable/ic_launcher_foreground.xml) để splash
-// của hệ điều hành chuyển sang màn này không bị hẫng.
+// The same shape as the launcher icon
+// (res/drawable/ic_launcher_foreground.xml) so the OS splash hands over to this
+// screen without a jolt.
 const STROKES = [
   'M40 42 L40 66',
   'M49 42 L49 66',
@@ -31,7 +32,7 @@ const STROKES = [
 ];
 const SLASH = 'M35 68 L72 40';
 
-/** Một nét, tự vẽ dần theo thứ tự index. */
+/** One stroke, drawing itself in index order. */
 function Stroke({
   d,
   index,
@@ -44,7 +45,7 @@ function Stroke({
   progress: SharedValue<number>;
 }) {
   const path = Skia.Path.MakeFromSVGString(d);
-  // Mỗi nét chiếm một lát của tiến trình chung, lệch nhau GAP_MS.
+  // Each stroke takes a slice of the shared progress, offset by GAP_MS.
   const total = GAP_MS * STROKES.length + DRAW_MS;
   const from = (index * GAP_MS) / total;
   const to = from + DRAW_MS / total;
@@ -59,7 +60,8 @@ function Stroke({
     <Path
       path={path}
       style="stroke"
-      // Chia ngược cho SCALE để nét không dày lên theo phép co giãn canvas.
+      // Divide back out by SCALE so the canvas scaling does not thicken the
+      // stroke.
       strokeWidth={4.5 / SCALE}
       strokeCap="round"
       color={color}
@@ -72,8 +74,8 @@ function Stroke({
 }
 
 /**
- * Màn hình lúc model đang nạp. Nền và logo trùng splash của hệ điều hành nên
- * nhìn như một mạch liên tục chứ không phải hai màn nối nhau.
+ * Shown while the model loads. Background and logo match the OS splash, so it
+ * reads as one continuous beat rather than two screens spliced together.
  */
 export function LaunchScreen({ status }: { status: string }) {
   const draw = useSharedValue(0);
@@ -86,7 +88,7 @@ export function LaunchScreen({ status }: { status: string }) {
       620,
       withTiming(1, { duration: 620, easing: ease }),
     );
-    // Nhịp thở nhẹ để màn hình không chết cứng nếu model nạp lâu.
+    // A gentle breath so the screen does not look frozen on a slow load.
     pulse.value = withDelay(
       1150,
       withRepeat(withTiming(1, { duration: 1400, easing: ease }), -1, true),
