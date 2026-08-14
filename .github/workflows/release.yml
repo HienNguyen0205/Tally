@@ -45,8 +45,6 @@ jobs:
 
       - run: npm ci
 
-      - run: chmod +x android/gradlew
-
       - name: Decode keystore
         env:
           KEYSTORE: ${{ secrets.TALLY_KEYSTORE_BASE64 }}
