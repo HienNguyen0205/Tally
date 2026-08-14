@@ -45,6 +45,10 @@ jobs:
 
       - run: npm ci
 
+      # fastlane's gradle action shells out to ./gradlew itself, so this cannot
+      # be worked around in the lane - see the note in ci.yml.
+      - run: chmod +x android/gradlew
+
       - name: Decode keystore
         env:
           KEYSTORE: ${{ secrets.TALLY_KEYSTORE_BASE64 }}
