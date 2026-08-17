@@ -49,6 +49,11 @@ yarn-error.log
 # For more information about the recommended setup visit:
 # https://docs.fastlane.tools/best-practices/source-control/
 
+# Local signing config. .env.default and .env.example stay tracked on purpose.
+fastlane/.env
+fastlane/.env.local
+# Regenerated on every lane run; the real docs live in the top-level README.
+fastlane/README.md
 **/fastlane/report.xml
 **/fastlane/Preview.html
 **/fastlane/screenshots

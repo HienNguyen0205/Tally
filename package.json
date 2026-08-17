@@ -5,9 +5,14 @@
   "scripts": {
     "android": "react-native run-android",
     "ios": "react-native run-ios",
-    "lint": "eslint .",
     "start": "react-native start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
     "test": "jest",
+    "verify": "npm run lint && npm run typecheck && npm test",
+    "release": "bundle exec fastlane android release",
+    "release:aab": "bundle exec fastlane android bundle",
+    "release:github": "bundle exec fastlane android github",
     "postinstall": "patch-package"
   },
   "dependencies": {

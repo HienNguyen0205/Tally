@@ -119,8 +119,11 @@ android {
             signingConfig signingConfigs.debug
         }
         release {
-            // Ký bằng keystore thật khi TALLY_STORE_FILE có trong ~/.gradle/gradle.properties
-            // hoặc -PTALLY_STORE_FILE=...; ngược lại rơi về debug key để build thử được.
+            // Signs with the real keystore when TALLY_STORE_FILE is present -
+            // normally as ORG_GRADLE_PROJECT_TALLY_STORE_FILE in the
+            // environment, from fastlane/.env locally or repository secrets in
+            // CI. Absent, it falls back to the debug key so release builds
+            // still work for local testing.
             signingConfig project.hasProperty('TALLY_STORE_FILE')
                     ? signingConfigs.release
                     : signingConfigs.debug

@@ -1,12 +1,16 @@
 default_platform(:android)
 
-# Signing is entirely Gradle's business, both locally and in CI - see
-# android/app/build.gradle. Locally it reads the TALLY_* properties from
-# ~/.gradle/gradle.properties; in CI they arrive as ORG_GRADLE_PROJECT_* env
-# vars, which Gradle picks up on its own. Nothing to wire up here.
+# Signing is entirely Gradle's business - see android/app/build.gradle. It
+# arrives as ORG_GRADLE_PROJECT_TALLY_* environment variables, which Gradle maps
+# to project properties on its own, and which the gradle action's subprocess
+# inherits. Locally fastlane loads them from fastlane/.env (gitignored, see
+# .env.example); in CI the workflow sets the same names from repository secrets.
+# One mechanism for both, and no credentials anywhere in this file.
 platform :android do
+  # Not named :debug - fastlane already ships an action by that name, and a lane
+  # shadowing an action warns on every run.
   desc 'Build the debug APK and install it on the connected device'
-  lane :debug do
+  lane :install do
     gradle(project_dir: 'android', task: 'installDebug')
   end
 

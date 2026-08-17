@@ -57,13 +57,14 @@ jobs:
       # The build and the publish both live in fastlane/Fastfile, so running a
       # release locally and running it here are the same code path. Signing
       # arrives through ORG_GRADLE_PROJECT_* rather than -P, so the passwords
-      # never reach the process list.
+      # never reach the process list. The key alias is not set here - it is a
+      # plain identifier and lives in fastlane/.env.default, which fastlane
+      # loads on both sides.
       - name: Build and publish
         env:
           GH_TOKEN: ${{ github.token }}
           ORG_GRADLE_PROJECT_TALLY_STORE_FILE: ${{ runner.temp }}/tally-release.jks
           ORG_GRADLE_PROJECT_TALLY_STORE_PASSWORD: ${{ secrets.TALLY_STORE_PASSWORD }}
-          ORG_GRADLE_PROJECT_TALLY_KEY_ALIAS: ${{ secrets.TALLY_KEY_ALIAS }}
           ORG_GRADLE_PROJECT_TALLY_KEY_PASSWORD: ${{ secrets.TALLY_KEY_PASSWORD }}
         run: bundle exec fastlane android github
 

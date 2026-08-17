@@ -105,6 +105,24 @@ npm run android
 npm run ios
 ```
 
+### All scripts
+
+| Script | What it does |
+|---|---|
+| `npm start` | Metro bundler |
+| `npm run android` / `npm run ios` | build, install, run |
+| `npm run lint` | ESLint |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm test` | Jest |
+| `npm run verify` | lint + typecheck + test — what CI runs |
+| `npm run release` | signed APKs, one per phone ABI |
+| `npm run release:aab` | App Bundle for the Play Store |
+| `npm run release:github` | build, then publish a GitHub Release |
+
+The three `release*` scripts wrap fastlane lanes, so they need `bundle install`
+first — see [Fastlane](#fastlane) below. Publishing normally happens by pushing
+a tag rather than by running `release:github` by hand.
+
 ### Release builds
 
 Release enables R8 minification. `proguard-rules.pro` keeps
@@ -112,18 +130,29 @@ Release enables R8 minification. `proguard-rules.pro` keeps
 reached only through JNI `FindClass`, so R8 cannot see the references and would
 otherwise strip them, crashing the app on model load.
 
-Signing reads four Gradle properties. Put them in `~/.gradle/gradle.properties`
-(never in the repo — `*.keystore` and `*.jks` are gitignored):
+Signing reads four Gradle project properties. Supply them as
+`ORG_GRADLE_PROJECT_*` environment variables — Gradle's own convention for
+passing a project property through the environment — by copying
+[`fastlane/.env.example`](fastlane/.env.example) to `fastlane/.env`, which
+fastlane loads automatically and the Gradle subprocess inherits:
 
-```properties
-TALLY_STORE_FILE=/absolute/path/to/tally-release.jks
-TALLY_STORE_PASSWORD=...
-TALLY_KEY_ALIAS=tally
-TALLY_KEY_PASSWORD=...
+```bash
+cp fastlane/.env.example fastlane/.env
 ```
 
-Without them the release build falls back to the debug key, so it still builds
-and installs for local testing — it just cannot be published.
+CI sets those same variable names from repository secrets, so a local release
+and a CI release are signed through one mechanism instead of two. Environment
+variables also keep the passwords out of the process list, unlike `-P` flags.
+
+`fastlane/.env` is gitignored, as are `*.keystore` and `*.jks` — keep the
+keystore itself outside the repo entirely.
+
+Running `./gradlew` directly instead of through a lane bypasses the `.env`
+loading; put the same four properties in `~/.gradle/gradle.properties` if you
+want that path to sign too.
+
+Without any of them the release build falls back to the debug key, so it still
+builds and installs for local testing — it just cannot be published.
 
 ### Fastlane
 
@@ -134,16 +163,24 @@ release and a CI release run the same code path. Requires Ruby:
 bundle install
 ```
 
-| Lane | What it does |
-|---|---|
-| `bundle exec fastlane android debug` | debug APK, installed on the connected device |
-| `bundle exec fastlane android release` | signed APKs, one per phone ABI |
-| `bundle exec fastlane android bundle` | App Bundle for the Play Store |
-| `bundle exec fastlane android github tag:v1.0.0` | the release lane, then publish to GitHub |
+| Lane | npm script | What it does |
+|---|---|---|
+| `fastlane android install` | — | debug APK, installed on the connected device |
+| `fastlane android release` | `npm run release` | signed APKs, one per phone ABI |
+| `fastlane android bundle` | `npm run release:aab` | App Bundle for the Play Store |
+| `fastlane android github tag:v1.0.0` | `npm run release:github` | the release lane, then publish to GitHub |
 
-Signing stays entirely Gradle's business in every lane — locally from
-`~/.gradle/gradle.properties`, in CI from `ORG_GRADLE_PROJECT_*` env vars — so
-there are no credentials in the Fastfile.
+Prefix the lanes with `bundle exec`. The `install` lane has no npm script
+because `npm run android` already builds, installs, and starts Metro.
+
+Signing stays entirely Gradle's business in every lane, reaching it as
+`ORG_GRADLE_PROJECT_*` environment variables from `fastlane/.env` locally and
+from repository secrets in CI, so there are no credentials in the Fastfile.
+
+`fastlane/.env.default` is committed and holds only non-secret defaults — right
+now just the key alias, which `keytool -list` prints from any keystore and which
+therefore does not deserve to be a secret. That is why CI needs three secrets
+rather than four.
 
 ### What the lanes run underneath
 
@@ -183,15 +220,18 @@ down from a 211MB universal APK.
 
 Pushing a `v*` tag runs [`.github/workflows/release.yml`](.github/workflows/release.yml),
 which calls the `github` lane to build both APKs and attach them to a GitHub
-Release. It needs four repository secrets, and fails fast if the first is missing
-rather than publishing a debug-signed build:
+Release. It needs three repository secrets, and fails fast if the first is
+missing rather than publishing a debug-signed build:
 
 | Secret | Value |
 |---|---|
 | `TALLY_KEYSTORE_BASE64` | `base64 -w0 tally-release.jks` |
 | `TALLY_STORE_PASSWORD` | keystore password |
-| `TALLY_KEY_ALIAS` | key alias |
 | `TALLY_KEY_PASSWORD` | key password |
+
+The key alias is not a secret — it comes from
+[`fastlane/.env.default`](fastlane/.env.default). Change it there if your
+keystore uses a different alias.
 
 Generate the keystore once and keep it safe — losing it means losing the ability
 to ship updates to anyone who already installed the app:
