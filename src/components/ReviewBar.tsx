@@ -8,6 +8,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { COLORS, EASE_OUT_EXPO, FONT } from '../shared/theme';
+import { t } from '../shared/strings';
 import type { SaveState } from '../hooks/useSavePhoto';
 import { GlassSurface } from './GlassSurface';
 import { IconButton } from './IconButton';
@@ -15,9 +16,9 @@ import { IconButton } from './IconButton';
 const ease = Easing.bezier(...EASE_OUT_EXPO);
 
 const SAVE_TEXT: Partial<Record<SaveState, string>> = {
-  saving: 'Đang lưu…',
-  saved: 'Đã lưu vào thư viện',
-  error: 'Lưu thất bại, chạm để thử lại',
+  saving: t.saving,
+  saved: t.saved,
+  error: t.saveFailed,
 };
 
 /**
@@ -60,11 +61,11 @@ export function ReviewBar({
       </Animated.View>
 
       <GlassSurface pill contentStyle={styles.row}>
-        <IconButton name="refresh" label="Chụp lại" onPress={onRetake} />
+        <IconButton name="refresh" label={t.retake} onPress={onRetake} />
         <View style={styles.divider} />
         <IconButton
           name={saveState === 'saved' ? 'check' : 'download'}
-          label="Lưu ảnh đã gắn khung vào thư viện"
+          label={t.saveAnnotated}
           active={saveState === 'saved'}
           disabled={saveState === 'saving' || saveState === 'saved'}
           onPress={onSave}

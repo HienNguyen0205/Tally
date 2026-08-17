@@ -19,9 +19,9 @@ jobs:
 
       - run: npm ci
 
-      - run: npm run lint
-
-      - run: npm test
+      # lint + typecheck + jest. Same script contributors run locally, so a
+      # green terminal and a green CI mean the same thing.
+      - run: npm run verify
 
   android:
     runs-on: ubuntu-latest
@@ -48,7 +48,44 @@ jobs:
       # workflow does not rely on it.
       - run: chmod +x android/gradlew
 
-      # Biên dịch cả native. Lint/test không bắt được lỗi CMake/NDK, mà đó lại
-      # là thứ hay vỡ nhất khi bump reanimated/worklets/skia.
+      # Compiles the native side too. Lint and tests cannot catch a CMake or NDK
+      # break, and that is the thing most likely to fail when reanimated,
+      # worklets or skia are bumped.
       - run: ./gradlew assembleDebug --no-daemon
         working-directory: android
+
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.11.0'
+          cache: npm
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+
+      - run: npm ci
+
+      # Generates the Pods project and runs New Architecture codegen. Nothing
+      # under ios/ has ever been compiled, so this job exists to prove the
+      # platform-specific branches - the ph:// path in PhotoPicker, the
+      # Platform.select font in annotate.ts, AppDelegate - at least build.
+      - run: bundle exec pod install
+        working-directory: ios
+
+      # Simulator build only: no certificates involved, and running the app
+      # would need a booted simulator plus a camera this platform cannot fake.
+      # Compiling is the part that regresses silently.
+      - run: |
+          xcodebuild build \
+            -workspace ios/PeopleDetector.xcworkspace \
+            -scheme PeopleDetector \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            -quiet

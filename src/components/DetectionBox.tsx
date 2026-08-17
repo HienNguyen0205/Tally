@@ -3,7 +3,8 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { COLORS, FONT } from '../shared/theme';
 import { PERSON_CLASS_ID } from '../shared/constants';
-import { labelVi } from '../shared/labels';
+import { label } from '../shared/labels';
+import { t } from '../shared/strings';
 import type { Detection } from '../shared/detections';
 import type { ScreenRect } from '../shared/boxLayout';
 
@@ -29,7 +30,7 @@ export function DetectionBox({
   const isPerson = detection.classId === PERSON_CLASS_ID;
   const color = isPerson ? COLORS.accent : COLORS.warn;
   const percent = Math.round(detection.score * 100);
-  const name = labelVi(detection.classId);
+  const name = label(detection.classId);
 
   // The label sits above the box; if the box hugs the top of the screen, flip it
   // down inside instead.
@@ -49,7 +50,10 @@ export function DetectionBox({
         selected && styles.boxSelected,
       ]}
       accessibilityRole="button"
-      accessibilityLabel={`${name}, độ tin cậy ${percent} phần trăm. Chạm để xem chi tiết.`}
+      // The label names the thing; what happens on activation belongs in the
+      // hint, which a screen reader reads separately and users can switch off.
+      accessibilityLabel={t.boxLabel(name, percent)}
+      accessibilityHint={t.boxHint}
       onPress={onPress}
     >
       <View

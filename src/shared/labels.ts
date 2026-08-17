@@ -1,3 +1,5 @@
+import { locale } from './strings';
+
 /**
  * YOLO's 80 COCO labels, taken from metadata.json inside the .tflite file.
  * Array index = the classId the model returns.
@@ -172,9 +174,16 @@ const VI: Record<string, string> = {
   toothbrush: 'bàn chải',
 };
 
-/** The class's Vietnamese name, falling back to the original. */
-export function labelVi(classId: number): string {
-  const en = COCO_LABELS[classId];
-  if (en == null) return `#${classId}`;
-  return VI[en] ?? en;
+/**
+ * The class name in the device's language.
+ *
+ * Falls back to the COCO name when there is no translation, and to `#id` when
+ * the model returns a class outside the table - which means the label list and
+ * the model have drifted apart, and showing the raw index makes that obvious
+ * rather than silently mislabelling.
+ */
+export function label(classId: number): string {
+  const name = COCO_LABELS[classId];
+  if (name == null) return `#${classId}`;
+  return locale === 'vi' ? VI[name] ?? name : name;
 }

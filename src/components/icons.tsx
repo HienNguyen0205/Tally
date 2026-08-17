@@ -41,6 +41,12 @@ const PATHS = {
     'M12 3.5 A8.5 8.5 0 1 0 12 20.5 A8.5 8.5 0 1 0 12 3.5 ' +
       'M12 8.5 A3.5 3.5 0 1 0 12 15.5 A3.5 3.5 0 1 0 12 8.5',
   ),
+  // Clock face with hands - scan history
+  clock: makePath(
+    'M12 3.5 A8.5 8.5 0 1 0 12 20.5 A8.5 8.5 0 1 0 12 3.5 M12 7.5 L12 12 L15.5 14',
+  ),
+  // Cross - dismiss a row or close a panel
+  close: makePath('M6 6 L18 18 M18 6 L6 18'),
 };
 
 export type IconName = keyof typeof PATHS;

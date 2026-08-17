@@ -17,6 +17,7 @@ import { CameraRoll } from '@react-native-camera-roll/camera-roll';
 import { Skia, type SkData } from '@shopify/react-native-skia';
 
 import { COLORS, FONT } from '../shared/theme';
+import { t } from '../shared/strings';
 
 const PAGE = 60;
 const COLUMNS = 3;
@@ -78,7 +79,7 @@ export async function loadImageData(uri: string): Promise<SkData> {
     });
     const path = asset.node.image.filepath;
     if (path == null || path === '') {
-      throw new Error('không lấy được đường dẫn file của ảnh');
+      throw new Error('could not resolve the photo file path');
     }
     return Skia.Data.fromURI(asFileUri(path));
   }
@@ -89,34 +90,51 @@ export async function loadImageData(uri: string): Promise<SkData> {
   const dataUrl = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error('không đọc được ảnh đã chọn'));
+    reader.onerror = () => reject(new Error('could not read the chosen photo'));
     reader.readAsDataURL(blob);
   });
   return Skia.Data.fromBase64(dataUrl.slice(dataUrl.indexOf(',') + 1));
 }
 
-/** A grid of recent photos to pick one from for scanning. */
+/**
+ * A grid of recent photos to pick from for scanning.
+ *
+ * Tapping selects rather than scanning straight away. That costs one extra tap
+ * for a single photo, but counting across a batch is the point of the app, and a
+ * hidden long-press mode nobody discovers would not be.
+ */
 export function PhotoPicker({
   onPick,
   onClose,
 }: {
-  onPick: (uri: string) => void;
+  onPick: (uris: string[]) => void;
   onClose: () => void;
 }) {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
 
   const [uris, setUris] = useState<string[] | null>(null);
+  // Insertion-ordered, so the batch is scanned in the order they were tapped.
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   // Android 14+: the user granted some photos, not the whole library.
   const [limited, setLimited] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const toggle = useCallback((uri: string) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(uri)) next.delete(uri);
+      else next.add(uri);
+      return next;
+    });
+  }, []);
 
   const cell = Math.floor((width - GAP * (COLUMNS - 1)) / COLUMNS);
 
   const load = useCallback(async () => {
     try {
       if (!(await ensurePhotoPermission())) {
-        setError('Cần quyền đọc ảnh để chọn từ thư viện.');
+        setError(t.needPhotoPermission);
         return;
       }
       const page = await CameraRoll.getPhotos({
@@ -126,8 +144,8 @@ export function PhotoPicker({
       setUris(page.edges.map(e => displayUri(e.node.image)));
       setLimited(page.limited === true);
     } catch (e) {
-      console.warn('[PhotoPicker] không đọc được thư viện ảnh', e);
-      setError('Không đọc được thư viện ảnh.');
+      console.warn('[PhotoPicker] could not read the photo library', e);
+      setError(t.cannotReadLibrary);
     }
   }, []);
 
@@ -144,10 +162,10 @@ export function PhotoPicker({
     >
       <View style={[styles.root, { paddingTop: insets.top }]}>
         <View style={styles.header}>
-          <Text style={styles.title}>Chọn ảnh</Text>
+          <Text style={styles.title}>{t.pickTitle}</Text>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Đóng"
+            accessibilityLabel={t.close}
             hitSlop={16}
             onPress={onClose}
           >
@@ -155,12 +173,12 @@ export function PhotoPicker({
           </Pressable>
         </View>
 
-        {/* Partial library access: there has to be a way back to the picker,
-            thì người dùng kẹt hẳn khi lỡ không chọn ảnh nào. */}
+        {/* Partial library access: there has to be a way back to the picker, or
+            someone who granted nothing by accident is stuck for good. */}
         {limited && uris != null && uris.length > 0 && (
           <Pressable style={styles.notice} onPress={load}>
             <Text style={styles.noticeText}>
-              Chỉ thấy {uris.length} ảnh bạn đã cho phép · Chọn thêm
+              {t.limitedNotice(uris.length)}
             </Text>
           </Pressable>
         )}
@@ -177,12 +195,12 @@ export function PhotoPicker({
           <View style={styles.center}>
             <Text style={styles.message}>
               {limited
-                ? 'Bạn chưa cho ứng dụng xem ảnh nào.'
-                : 'Thư viện chưa có ảnh nào.'}
+                ? t.noPhotosGranted
+                : t.noPhotos}
             </Text>
             {limited && (
               <Pressable style={styles.cta} onPress={load}>
-                <Text style={styles.ctaText}>Chọn ảnh cho phép</Text>
+                <Text style={styles.ctaText}>{t.grantMorePhotos}</Text>
               </Pressable>
             )}
           </View>
@@ -192,20 +210,52 @@ export function PhotoPicker({
             keyExtractor={uri => uri}
             numColumns={COLUMNS}
             columnWrapperStyle={styles.gridRow}
-            contentContainerStyle={{ paddingBottom: insets.bottom }}
-            renderItem={({ item }) => (
-              <Pressable
-                accessibilityRole="imagebutton"
-                accessibilityLabel="Quét ảnh này"
-                onPress={() => onPick(item)}
-              >
-                <Image
-                  source={{ uri: item }}
-                  style={{ width: cell, height: cell }}
-                />
-              </Pressable>
-            )}
+            contentContainerStyle={{
+              // Clear the floating action button, which covers the last row.
+              paddingBottom: insets.bottom + (selected.size > 0 ? 96 : 0),
+            }}
+            renderItem={({ item }) => {
+              const isSelected = selected.has(item);
+              return (
+                <Pressable
+                  accessibilityRole="imagebutton"
+                  accessibilityLabel={
+                    isSelected ? t.deselectPhoto : t.selectPhoto
+                  }
+                  accessibilityState={{ selected: isSelected }}
+                  onPress={() => toggle(item)}
+                >
+                  <Image
+                    source={{ uri: item }}
+                    style={{ width: cell, height: cell }}
+                  />
+                  {isSelected && (
+                    <View
+                      style={[styles.picked, { width: cell, height: cell }]}
+                    >
+                      <View style={styles.tick}>
+                        {/* A glyph, not the Skia <Icon>: a Canvas renders
+                            nothing inside a Modal on Android. */}
+                        <Text style={styles.tickMark}>✓</Text>
+                      </View>
+                    </View>
+                  )}
+                </Pressable>
+              );
+            }}
           />
+        )}
+
+        {selected.size > 0 && (
+          <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
+            <Pressable
+              style={styles.cta}
+              accessibilityRole="button"
+              onPress={() => onPick([...selected])}
+            >
+              <Text style={styles.ctaText}>{t.scanSelected(selected.size)}</Text>
+            </Pressable>
+          </View>
         )}
       </View>
     </Modal>
@@ -263,4 +313,30 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   gridRow: { gap: GAP, marginBottom: GAP },
+  picked: {
+    position: 'absolute',
+    alignItems: 'flex-end',
+    padding: 6,
+    borderWidth: 2,
+    borderColor: COLORS.accent,
+    backgroundColor: 'rgba(0,230,118,0.22)',
+  },
+  tick: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.accent,
+  },
+  tickMark: { color: '#04120A', fontFamily: FONT.semibold, fontSize: 12 },
+  footer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    paddingTop: 12,
+    backgroundColor: 'rgba(5,5,5,0.92)',
+  },
 });

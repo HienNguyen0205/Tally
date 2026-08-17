@@ -9,7 +9,8 @@ import Animated, {
 
 import { COLORS, EASE_OUT_EXPO, FONT } from '../shared/theme';
 import { PERSON_CLASS_ID } from '../shared/constants';
-import { labelVi } from '../shared/labels';
+import { label } from '../shared/labels';
+import { t } from '../shared/strings';
 import { GlassSurface } from './GlassSurface';
 import { Icon } from './icons';
 
@@ -66,8 +67,8 @@ export function ClassFilter({
   const shown = counts.length - hidden.size;
   const summary =
     hidden.size === 0
-      ? `${counts.length} loại`
-      : `${shown}/${counts.length} loại`;
+      ? t.classCount(counts.length)
+      : t.classCountPartial(shown, counts.length);
 
   return (
     <View style={styles.wrap}>
@@ -79,7 +80,7 @@ export function ClassFilter({
                 const off = hidden.has(classId);
                 const color =
                   classId === PERSON_CLASS_ID ? COLORS.accent : COLORS.warn;
-                const name = labelVi(classId);
+                const name = label(classId);
 
                 return (
                   <Pressable
@@ -87,7 +88,8 @@ export function ClassFilter({
                     style={[styles.chip, off && styles.chipOff]}
                     accessibilityRole="switch"
                     accessibilityState={{ checked: !off }}
-                    accessibilityLabel={`${name}, ${count} vật thể`}
+                    accessibilityLabel={t.classChip(name, count)}
+                    accessibilityHint={t.classChipHint}
                     onPress={() => onToggle(classId)}
                   >
                     <View
@@ -117,7 +119,7 @@ export function ClassFilter({
           accessibilityRole="button"
           accessibilityState={{ expanded: open }}
           accessibilityLabel={
-            open ? 'Thu gọn bộ lọc loại vật thể' : 'Mở bộ lọc loại vật thể'
+            open ? t.collapseFilter : t.expandFilter
           }
           onPress={() => setOpen(o => !o)}
         >

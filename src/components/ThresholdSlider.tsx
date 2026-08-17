@@ -1,4 +1,4 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useCallback, useMemo, useRef } from 'react';
 import { PanResponder, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
@@ -8,6 +8,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { COLORS, EASE_OUT_EXPO, FONT } from '../shared/theme';
+import { t } from '../shared/strings';
 import { Icon } from './icons';
 
 const TRACK_W = 104;
@@ -81,8 +82,38 @@ export function ThresholdSlider({ value, onChange }: Props) {
     transform: [{ scaleX: progress.value }],
   }));
 
+  // A drag is unusable with a screen reader on. Declaring the row adjustable
+  // gives it the standard swipe-up/down gestures, and the actions below map
+  // those onto the same 5% steps a sighted user gets from small drags.
+  const step = useCallback(
+    (delta: number) => {
+      const next = clamp(toProgress(value) + delta);
+      progress.value = withTiming(next, { duration: 120, easing: ease });
+      onChange(Math.round((MIN + next * (MAX - MIN)) * 100) / 100);
+    },
+    [value, progress, onChange],
+  );
+
   return (
-    <View style={styles.wrap} {...pan.panHandlers}>
+    <View
+      style={styles.wrap}
+      accessible
+      accessibilityRole="adjustable"
+      accessibilityLabel={t.thresholdLabel}
+      accessibilityHint={t.thresholdHint}
+      accessibilityValue={{
+        min: Math.round(MIN * 100),
+        max: Math.round(MAX * 100),
+        now: Math.round(value * 100),
+        text: t.percent(Math.round(value * 100)),
+      }}
+      onAccessibilityAction={e => {
+        if (e.nativeEvent.actionName === 'increment') step(0.05);
+        if (e.nativeEvent.actionName === 'decrement') step(-0.05);
+      }}
+      accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
+      {...pan.panHandlers}
+    >
       <Icon name="target" size={15} color={COLORS.textMuted} strokeWidth={1.5} />
 
       <View style={styles.track}>

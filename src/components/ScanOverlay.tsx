@@ -9,6 +9,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { COLORS, EASE_OUT_EXPO, FONT } from '../shared/theme';
+import { t } from '../shared/strings';
 import { GlassSurface } from './GlassSurface';
 
 const SWEEP_MS = 1100;
@@ -28,7 +29,7 @@ function Corner({ style }: { style: object }) {
  * The scanning overlay: four corner brackets springing open plus a line sweeping
  * down. Transform/opacity only, so it runs on the GPU and causes no reflow.
  */
-export function ScanOverlay() {
+export function ScanOverlay({ label }: { label?: string }) {
   const { width, height } = useWindowDimensions();
   // Sized off the short edge: a fixed % squashes flat in landscape.
   const inset = Math.round(Math.min(width, height) * 0.11);
@@ -88,7 +89,7 @@ export function ScanOverlay() {
       <Animated.View style={[styles.labelAnchor, labelStyle]}>
         <GlassSurface pill contentStyle={styles.labelCore}>
           <View style={styles.pulse} />
-          <Text style={styles.label}>ĐANG QUÉT</Text>
+          <Text style={styles.label}>{label ?? t.scanning}</Text>
         </GlassSurface>
       </Animated.View>
     </View>

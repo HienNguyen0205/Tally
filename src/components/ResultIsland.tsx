@@ -9,6 +9,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { COLORS, EASE_OUT_EXPO, FONT } from '../shared/theme';
+import { t } from '../shared/strings';
 import { GlassSurface } from './GlassSurface';
 
 interface Props {
@@ -71,12 +72,12 @@ export function ResultIsland({ peopleCount, objectCount }: Props) {
             ]}
           />
           <Text style={styles.count}>{peopleCount}</Text>
-          <Text style={styles.unit}>người</Text>
+          <Text style={styles.unit}>{t.people}</Text>
 
           <Animated.View style={[styles.tail, staggerStyle]}>
             <View style={styles.dividerV} />
             <Text style={styles.objects}>{objectCount}</Text>
-            <Text style={styles.unit}>vật thể</Text>
+            <Text style={styles.unit}>{t.objects}</Text>
           </Animated.View>
         </GlassSurface>
       </Animated.View>

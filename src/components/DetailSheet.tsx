@@ -9,7 +9,8 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { COLORS, EASE_OUT_EXPO, FONT } from '../shared/theme';
-import { COCO_LABELS, labelVi } from '../shared/labels';
+import { COCO_LABELS, label } from '../shared/labels';
+import { t } from '../shared/strings';
 import { PERSON_CLASS_ID } from '../shared/constants';
 import { GlassSurface } from './GlassSurface';
 
@@ -62,27 +63,27 @@ export function DetailSheet({
 
   const accent = classId === PERSON_CLASS_ID ? COLORS.accent : COLORS.warn;
   const en = COCO_LABELS[classId] ?? `#${classId}`;
-  const vi = labelVi(classId);
+  const name = label(classId);
 
   return (
     <Animated.View style={sheetStyle}>
       <GlassSurface pill contentStyle={styles.core}>
         <View style={styles.textCol}>
           <Text style={styles.title} numberOfLines={1}>
-            {vi}
+            {name}
           </Text>
           {/* The subline prefers the classifier's name - it says far more
-              nhiều hơn hẳn tên gốc tiếng Anh của COCO. */}
+                than COCO's coarse original. */}
           {refining === true ? (
             <Text style={[styles.subtitle, styles.subtitleWaiting]}>
-              đang nhận dạng…
+              {t.identifying}
             </Text>
           ) : refined != null ? (
             <Text style={[styles.subtitle, styles.subtitleRefined]}>
               {refined.label} · {Math.round(refined.score * 100)}%
             </Text>
           ) : (
-            vi !== en && (
+            name !== en && (
               <Text style={styles.subtitle} numberOfLines={1}>
                 {en}
               </Text>
@@ -103,7 +104,7 @@ export function DetailSheet({
         <Pressable
           style={styles.close}
           accessibilityRole="button"
-          accessibilityLabel="Đóng bảng chi tiết"
+          accessibilityLabel={t.closeDetail}
           hitSlop={12}
           onPress={onClose}
         >

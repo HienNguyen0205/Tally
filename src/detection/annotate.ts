@@ -9,7 +9,7 @@ import {
 import { boxToScreen } from '../shared/boxLayout';
 import { PERSON_CLASS_ID } from '../shared/constants';
 import type { Detection } from '../shared/detections';
-import { COCO_LABELS } from '../shared/labels';
+import { label } from '../shared/labels';
 
 const PERSON_COLOR = '#00E676'; // people - green
 const OBJECT_COLOR = '#FFC400'; // other objects - amber
@@ -83,7 +83,11 @@ export function annotate(
       isPerson ? personPaint : objectPaint,
     );
 
-    const name = COCO_LABELS[d.classId] ?? `#${d.classId}`;
+    // The same localised name the HUD shows, so a saved image and the screen
+    // cannot disagree about what was found. Only the casing differs - the chip
+    // on screen is styled with textTransform, which Skia has no equivalent of
+    // and which is not worth reimplementing here.
+    const name = label(d.classId);
     const text = `${name} ${Math.round(d.score * 100)}%`;
     const textW = labelFont.measureText(text).width;
 

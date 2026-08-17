@@ -51,7 +51,12 @@ platform :android do
       # GITHUB_REPOSITORY is set by Actions; the literal is the local fallback.
       # Reading it means a fork publishes to the fork, not here.
       repository_name: ENV['GITHUB_REPOSITORY'] || 'HienNguyen0205/Tally',
-      api_token: token,
+      # api_bearer, NOT api_token. fastlane sends api_token as Basic auth, which
+      # the ghs_ installation token GitHub Actions issues rejects - and the API
+      # answers an unauthorised release create with 404 rather than 403, so it
+      # reads as "repository not found" instead of "wrong credentials". Bearer
+      # is also what personal access tokens want, so this covers both.
+      api_bearer: token,
       tag_name: tag,
       name: tag,
       description: "On-device object detection. Install the APK matching your phone's CPU: " \

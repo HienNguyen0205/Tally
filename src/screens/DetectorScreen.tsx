@@ -2,6 +2,7 @@ import React, {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import {
@@ -47,11 +48,15 @@ import {
   type Detection,
 } from '../shared/detections';
 import { COLORS, EASE_OUT_EXPO, FONT, RADIUS } from '../shared/theme';
+import { summarise } from '../shared/history';
+import { t } from '../shared/strings';
+import { makeThumbnail } from '../shared/thumbnail';
 import { useAlert } from '../hooks/useAlert';
 import { useSavePhoto } from '../hooks/useSavePhoto';
 import { useCameraControls } from '../hooks/useCameraControls';
 import { useClassFilter } from '../hooks/useClassFilter';
 import { useRefinedLabel } from '../hooks/useRefinedLabel';
+import { useScanHistory } from '../hooks/useScanHistory';
 import { ResultIsland } from '../components/ResultIsland';
 import { ScanOverlay } from '../components/ScanOverlay';
 import { GlassSurface } from '../components/GlassSurface';
@@ -64,6 +69,7 @@ import { LaunchScreen } from '../components/LaunchScreen';
 import { DetailSheet } from '../components/DetailSheet';
 import { DetectionBox } from '../components/DetectionBox';
 import { ClassFilter } from '../components/ClassFilter';
+import { HistorySheet } from '../components/HistorySheet';
 import { PhotoPicker, loadImageData } from '../components/PhotoPicker';
 import { readFrameDetections } from '../detection/runModel';
 import { scanImage } from '../detection/scanImage';
@@ -167,6 +173,13 @@ export function DetectorScreen() {
   // Non-null = reviewing a library photo rather than a freshly captured frame.
   const [photo, setPhoto] = useState<SkImage | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  // Progress through a multi-photo run; null for a single photo or the camera.
+  const [batch, setBatch] = useState<{ done: number; total: number } | null>(
+    null,
+  );
+  // Ids the last batch produced, so its rows can be summarised in the sheet.
+  const [lastBatch, setLastBatch] = useState<string[] | null>(null);
   // Boxes are drawn over the image, so changing the threshold re-filters
   // immediately - no need to shoot again.
   const [threshold, setThreshold] = useState(SCORE_THRESHOLD);
@@ -176,6 +189,35 @@ export function DetectorScreen() {
     useClassFilter(result, threshold);
 
   const { state: saveState, save, reset: resetSave } = useSavePhoto();
+  const {
+    records: history,
+    add: addHistory,
+    remove: removeScan,
+    clear: clearHistory,
+  } = useScanHistory();
+
+  // The result already written to history. Compared by identity: a new scan
+  // always makes a new array, while moving the threshold or hiding a class does
+  // not - so adjusting the view afterwards cannot log a second entry.
+  const recorded = useRef<Detection[] | null>(null);
+
+  /** Writes one finished scan to history and returns its id. */
+  const recordScan = useCallback(
+    (kept: Detection[], source: SkImage | null): string => {
+      const at = Date.now();
+      const id = `${at}-${Math.random().toString(36).slice(2, 8)}`;
+
+      addHistory({
+        id,
+        at,
+        // A record without its picture is still worth keeping.
+        thumbnail: (source != null ? makeThumbnail(source) : null) ?? '',
+        ...summarise(kept),
+      });
+      return id;
+    },
+    [addHistory],
+  );
 
   const press = useSharedValue(0);
   const shutterStyle = useAnimatedStyle(() => ({
@@ -296,63 +338,99 @@ export function DetectorScreen() {
     [onAlert, threshold],
   );
 
-  // Scanning a library photo: same model, same two passes, same merge as a shot.
-  const onPickPhoto = useCallback(
-    async (uri: string) => {
+  /**
+   * Scanning library photos: same model, same two passes, same merge as a shot.
+   *
+   * A batch runs one photo at a time, showing each as it goes, and writes its
+   * own history entries. It cannot lean on the effect below, which deliberately
+   * waits for the whole run to finish - by then the intermediate results are
+   * gone. The last entry is suppressed there via `recorded` instead of being
+   * written twice.
+   */
+  const onPickPhotos = useCallback(
+    async (uris: string[]) => {
       setPickerOpen(false);
-      if (model == null) return;
+      if (model == null || uris.length === 0) return;
 
       setScanBusy(true);
+      setResult(null);
+      resetFilter();
+      setPicked(null);
+      resetSave();
+      setMode('frozen');
+
+      const ids: string[] = [];
+      let people = 0;
+
       try {
-        // Decode first, animation off: there is nothing to scan yet, and laying
-        // the animation over the camera preview reads as scanning the scene in
-        // front of you rather than the photo just chosen.
-        const image = Skia.Image.MakeImageFromEncoded(await loadImageData(uri));
-        if (image == null) throw new Error('không giải mã được ảnh');
+        for (const [i, uri] of uris.entries()) {
+          setBatch(uris.length > 1 ? { done: i, total: uris.length } : null);
 
-        setPhoto(image);
-        setFrameSize({ w: image.width(), h: image.height() });
-        setResult(null);
-        resetFilter();
-        setPicked(null);
-        resetSave();
-        setMode('frozen');
-        setScanning(true);
+          // Decode first, animation off: there is nothing to scan yet, and
+          // laying the animation over the camera preview reads as scanning the
+          // scene in front of you rather than the photo just chosen.
+          const image = Skia.Image.MakeImageFromEncoded(
+            await loadImageData(uri),
+          );
+          if (image == null) throw new Error('could not decode the image');
 
-        // Yield a frame so React paints the image first. Without this, building
-        // the input (Skia plus a pixel loop) runs in the same tick and the
-        // animation appears before the image does.
-        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+          setPhoto(image);
+          setFrameSize({ w: image.width(), h: image.height() });
+          setResult(null);
+          setScanning(true);
 
-        const found = await scanImage(model, image);
-        if (found == null) throw new Error('không dựng được surface xử lý ảnh');
-        setResult(found);
+          // Yield a frame so React paints the image first. Without this,
+          // building the input (Skia plus a pixel loop) runs in the same tick
+          // and the animation appears before the image does.
+          await new Promise<void>(resolve =>
+            requestAnimationFrame(() => resolve()),
+          );
 
-        const people = found.filter(
-          d => d.classId === PERSON_CLASS_ID && passesThreshold(d, threshold),
-        ).length;
+          const found = await scanImage(model, image);
+          if (found == null) {
+            throw new Error('could not create the processing surface');
+          }
+          setResult(found);
+
+          const kept = found.filter(d => passesThreshold(d, threshold));
+          people += kept.filter(d => d.classId === PERSON_CLASS_ID).length;
+
+          const id = recordScan(kept, image);
+          ids.push(id);
+          // The effect below would otherwise log this last result a second time.
+          recorded.current = found;
+        }
+
         if (people > 0) onAlert();
+        // One photo stays on screen as before. A batch has nothing useful left
+        // showing - only the last image - so hand over to the sheet that can
+        // show every result at once.
+        if (ids.length > 1) {
+          setLastBatch(ids);
+          setHistoryOpen(true);
+        }
       } catch (e) {
         console.warn('[DetectorScreen] library photo scan failed', e);
         setPhoto(null);
         setMode('idle');
         // Say it out loud: tapping a photo and having nothing happen just reads
         // as a broken app.
-        Alert.alert('Không quét được ảnh', String(e));
+        Alert.alert(t.scanFailed, String(e));
       } finally {
+        setBatch(null);
         setScanBusy(false);
         setScanning(false);
       }
     },
-    [model, threshold, onAlert, resetSave, resetFilter],
+    [model, threshold, onAlert, resetSave, resetFilter, recordScan],
   );
 
   // Let the scan animation run on a little so the feedback registers. Skipped
   // while real work is in flight - then the work itself sets the duration.
   useEffect(() => {
     if (!scanning || scanBusy) return;
-    const t = setTimeout(() => setScanning(false), SCAN_ANIM_MS);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setScanning(false), SCAN_ANIM_MS);
+    return () => clearTimeout(timer);
   }, [scanning, scanBusy]);
 
   // If the box whose details are open gets hidden, the sheet has to close with
@@ -364,19 +442,30 @@ export function DetectorScreen() {
     }
   }, [picked, threshold, hidden]);
 
+  // Logs a camera capture once it has settled. A batch writes its own entries
+  // as it goes and marks `recorded`, so this only ever fires for the shutter.
+  useEffect(() => {
+    if (result == null || scanning || scanBusy) return;
+    if (recorded.current === result) return;
+    recorded.current = result;
+
+    // Same source the save button uses: the library photo, or the frozen frame.
+    recordScan(visible, photo ?? cam.camera.current?.takeSnapshot() ?? null);
+  }, [result, scanning, scanBusy, photo, visible, recordScan, cam.camera]);
+
   const { camera, device } = cam;
 
   if (device == null) {
-    return <StateScreen eyebrow="THIẾT BỊ" title="Không tìm thấy camera" />;
+    return <StateScreen eyebrow={t.deviceEyebrow} title={t.noCamera} />;
   }
 
   if (!hasPermission) {
     return (
       <StateScreen
-        eyebrow="QUYỀN TRUY CẬP"
-        title="Cần quyền dùng camera"
-        body="Ảnh được xử lý hoàn toàn trên máy, không có hình nào rời khỏi thiết bị."
-        action={{ label: 'Cấp quyền', onPress: requestPermission }}
+        eyebrow={t.permissionEyebrow}
+        title={t.cameraPermissionTitle}
+        body={t.cameraPermissionBody}
+        action={{ label: t.grantPermission, onPress: requestPermission }}
       />
     );
   }
@@ -388,14 +477,14 @@ export function DetectorScreen() {
     objectDetection.state === 'loading' ||
     (objectDetection.state === 'error' && delegates.length > 0)
   ) {
-    return <LaunchScreen status="Đang nạp mô hình" />;
+    return <LaunchScreen status={t.loadingModel} />;
   }
 
   if (objectDetection.state === 'error') {
     return (
       <StateScreen
-        eyebrow="LỖI"
-        title="Không nạp được model"
+        eyebrow={t.errorEyebrow}
+        title={t.modelLoadFailed}
         body={String(objectDetection.error)}
       />
     );
@@ -404,8 +493,8 @@ export function DetectorScreen() {
   if (resizerError != null) {
     return (
       <StateScreen
-        eyebrow="LỖI"
-        title="Không khởi tạo được resizer"
+        eyebrow={t.errorEyebrow}
+        title={t.resizerFailed}
         body={String(resizerError)}
       />
     );
@@ -418,8 +507,8 @@ export function DetectorScreen() {
   const zoomSteps = ZOOM_STEPS.filter(z => z <= device.maxZoom);
 
   const reviewing = mode === 'frozen' && !scanning;
-  // While reviewing only the threshold slider still does anything, and an open
-  // detail sheet takes the space outright.
+  // The toolbar exists in two shapes: camera buttons while composing, the
+  // threshold while reviewing. An open detail sheet takes the space outright.
   const showTools = (mode === 'idle' || reviewing) && picked == null;
 
   return (
@@ -513,7 +602,7 @@ export function DetectorScreen() {
       {mode === 'idle' && (
         <Pressable
           style={StyleSheet.absoluteFill}
-          accessibilityLabel="Chạm vào khung hình để lấy nét"
+          accessibilityLabel={t.tapToFocus}
           onPress={e => {
             const { locationX, locationY } = e.nativeEvent;
             cam.focusAt(locationX, locationY);
@@ -534,7 +623,7 @@ export function DetectorScreen() {
       {picked != null && (
         <Pressable
           style={StyleSheet.absoluteFill}
-          accessibilityLabel="Đóng bảng chi tiết"
+          accessibilityLabel={t.closeDetail}
           onPress={() => setPicked(null)}
         />
       )}
@@ -570,7 +659,15 @@ export function DetectorScreen() {
         </View>
       )}
 
-      {scanning && <ScanOverlay />}
+      {scanning && (
+        <ScanOverlay
+          label={
+            batch != null
+              ? t.scanningProgress(batch.done + 1, batch.total)
+              : undefined
+          }
+        />
+      )}
 
       {result != null && (
         <ResultIsland peopleCount={peopleCount} objectCount={visible.length} />
@@ -588,35 +685,40 @@ export function DetectorScreen() {
             <ClassFilter counts={counts} hidden={hidden} onToggle={toggle} />
           )}
 
+          {/* The two modes want different controls, and showing both at once
+              stretched the pill across the whole screen. Capture gets the camera
+              buttons; review gets the threshold, which is the only thing that
+              does anything once an image is frozen. */}
           <GlassSurface pill contentStyle={styles.toolRow}>
-            {mode === 'idle' && (
-              <IconButton
-                name="bolt"
-                label={cam.torch === 'on' ? 'Tắt đèn flash' : 'Bật đèn flash'}
-                active={cam.torch === 'on'}
-                // The front camera has no torch, so lock it out rather than
-                // letting the tap do nothing.
-                disabled={cam.torchDisabled}
-                onPress={cam.toggleTorch}
-              />
-            )}
-
-            {mode === 'idle' && (
-              <IconButton
-                name="image"
-                label="Quét ảnh có sẵn trong thư viện"
-                onPress={() => setPickerOpen(true)}
-              />
-            )}
-
-            <ThresholdSlider value={threshold} onChange={setThreshold} />
-
-            {mode === 'idle' && (
-              <IconButton
-                name="flip"
-                label="Đổi camera trước sau"
-                onPress={cam.flip}
-              />
+            {mode === 'idle' ? (
+              <>
+                <IconButton
+                  name="bolt"
+                  label={cam.torch === 'on' ? t.torchOff : t.torchOn}
+                  active={cam.torch === 'on'}
+                  // The front camera has no torch, so lock it out rather than
+                  // letting the tap do nothing.
+                  disabled={cam.torchDisabled}
+                  onPress={cam.toggleTorch}
+                />
+                <IconButton
+                  name="image"
+                  label={t.pickFromLibrary}
+                  onPress={() => setPickerOpen(true)}
+                />
+                <IconButton
+                  name="clock"
+                  label={t.openHistory}
+                  onPress={() => setHistoryOpen(true)}
+                />
+                <IconButton
+                  name="flip"
+                  label={t.flipCamera}
+                  onPress={cam.flip}
+                />
+              </>
+            ) : (
+              <ThresholdSlider value={threshold} onChange={setThreshold} />
             )}
           </GlassSurface>
 
@@ -666,7 +768,7 @@ export function DetectorScreen() {
               style={styles.shutterShell}
               disabled={scanning}
               accessibilityRole="button"
-              accessibilityLabel="Chụp và quét"
+              accessibilityLabel={t.shutter}
               onPressIn={() => {
                 press.value = withTiming(1, {
                   duration: 180,
@@ -699,8 +801,18 @@ export function DetectorScreen() {
 
       {pickerOpen && (
         <PhotoPicker
-          onPick={onPickPhoto}
+          onPick={onPickPhotos}
           onClose={() => setPickerOpen(false)}
+        />
+      )}
+
+      {historyOpen && (
+        <HistorySheet
+          records={history}
+          batch={lastBatch}
+          onRemove={removeScan}
+          onClear={clearHistory}
+          onClose={() => setHistoryOpen(false)}
         />
       )}
     </View>

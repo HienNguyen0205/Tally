@@ -8,6 +8,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { COLORS, EASE_OUT_EXPO, FONT, RADIUS } from '../shared/theme';
+import { t } from '../shared/strings';
 
 const ITEM_W = 52;
 const ease = Easing.bezier(...EASE_OUT_EXPO);
@@ -84,7 +85,7 @@ export function ZoomSelector({ steps, value, onChange }: Props) {
           key={z}
           style={styles.item}
           accessibilityRole="button"
-          accessibilityLabel={`Phóng to ${z} lần`}
+          accessibilityLabel={t.zoomTimes(z)}
           accessibilityState={{ selected: z === value }}
           onPress={() => moveTo(i)}
         >
