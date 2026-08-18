@@ -24,7 +24,8 @@ const vi = {
   permissionEyebrow: 'QUYỀN TRUY CẬP',
   cameraPermissionTitle: 'Cần quyền dùng camera',
   cameraPermissionBody:
-    'Ảnh được xử lý hoàn toàn trên máy, không có hình nào rời khỏi thiết bị.',
+    'Nhận diện xử lý hoàn toàn trên máy. Lịch sử quét được sao lưu ẩn danh ' +
+    'lên đám mây để không mất khi đổi máy hoặc cài lại app.',
   grantPermission: 'Cấp quyền',
   errorEyebrow: 'LỖI',
   modelLoadFailed: 'Không nạp được model',
@@ -97,17 +98,32 @@ const vi = {
     'Chưa có lần quét nào được lưu.\nMỗi lần chụp hoặc quét ảnh sẽ tự xuất hiện ở đây.',
   nothingFound: 'Không tìm thấy vật thể nào',
   removeScan: 'Xoá lần quét này',
-  clearHistory: 'Xoá tất cả',
+  selectScans: 'Chọn nhiều lần quét',
+  cancelSelect: 'Huỷ',
+  selectAll: 'Chọn tất cả',
+  deselectAll: 'Bỏ chọn tất cả',
+  deleteSelected: (n: number) => `Xoá ${n}`,
+  selectRow: 'Chọn lần quét này',
+  deselectRow: 'Bỏ chọn lần quét này',
+  openScan: 'Mở lại lần quét này',
+  noPreview: 'Lần quét này được lưu trước khi có ảnh xem lại.',
+  shareHistory: 'Xuất CSV',
+  shareSubject: 'Lịch sử quét Tally',
+  shareFailed: 'Không chia sẻ được lịch sử',
   batchTitle: (n: number) => `Vừa quét ${n} ảnh`,
   batchTotal: (people: number, total: number) =>
     `Tổng cộng ${people} người · ${total} vật thể`,
   countOf: (count: number, name: string) => `${count} ${name}`,
 
-  // Relative time
-  justNow: 'vừa xong',
-  minutesAgo: (n: number) => `${n} phút trước`,
-  hoursAgo: (n: number) => `${n} giờ trước`,
-  daysAgo: (n: number) => `${n} ngày trước`,
+  // Day headers
+  today: 'Hôm nay',
+  yesterday: 'Hôm qua',
+
+  // Running total
+  sumStart: 'Bắt đầu cộng dồn nhiều lần chụp',
+  sumStop: 'Dừng cộng dồn',
+  sumTotal: 'tổng',
+  sumPhotos: (n: number) => `${n} ảnh`,
 } as const;
 
 type Strings = {
@@ -126,7 +142,8 @@ const en: Strings = {
   permissionEyebrow: 'PERMISSION',
   cameraPermissionTitle: 'Camera access needed',
   cameraPermissionBody:
-    'Everything is processed on the device. No image ever leaves it.',
+    'Detection runs entirely on the device. Scan history is backed up ' +
+    'anonymously to the cloud so it survives a lost or reinstalled phone.',
   grantPermission: 'Grant access',
   errorEyebrow: 'ERROR',
   modelLoadFailed: 'Could not load the model',
@@ -190,16 +207,30 @@ const en: Strings = {
     'No scans saved yet.\nEvery capture and every scanned photo shows up here.',
   nothingFound: 'No objects found',
   removeScan: 'Delete this scan',
-  clearHistory: 'Clear all',
+  selectScans: 'Select several scans',
+  cancelSelect: 'Cancel',
+  selectAll: 'Select all',
+  deselectAll: 'Deselect all',
+  deleteSelected: (n: number) => `Delete ${n}`,
+  selectRow: 'Select this scan',
+  deselectRow: 'Deselect this scan',
+  openScan: 'Open this scan',
+  noPreview: 'This scan was saved before previews existed.',
+  shareHistory: 'Export CSV',
+  shareSubject: 'Tally scan history',
+  shareFailed: 'Could not share the history',
   batchTitle: (n: number) => `Just scanned ${n} photos`,
   batchTotal: (people: number, total: number) =>
     `${people} people, ${total} objects in total`,
   countOf: (count: number, name: string) => `${count} ${name}`,
 
-  justNow: 'just now',
-  minutesAgo: (n: number) => `${n} min ago`,
-  hoursAgo: (n: number) => `${n} h ago`,
-  daysAgo: (n: number) => `${n} d ago`,
+  today: 'Today',
+  yesterday: 'Yesterday',
+
+  sumStart: 'Start adding captures up',
+  sumStop: 'Stop adding up',
+  sumTotal: 'total',
+  sumPhotos: (n: number) => `${n} photos`,
 };
 
 export type Locale = 'vi' | 'en';

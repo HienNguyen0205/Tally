@@ -48,9 +48,9 @@ import {
   type Detection,
 } from '../shared/detections';
 import { COLORS, EASE_OUT_EXPO, FONT, RADIUS } from '../shared/theme';
-import { summarise } from '../shared/history';
+import { summarise, totalOf } from '../shared/history';
 import { t } from '../shared/strings';
-import { makeThumbnail } from '../shared/thumbnail';
+import { makePreview, makeThumbnail } from '../shared/thumbnail';
 import { useAlert } from '../hooks/useAlert';
 import { useSavePhoto } from '../hooks/useSavePhoto';
 import { useCameraControls } from '../hooks/useCameraControls';
@@ -180,6 +180,10 @@ export function DetectorScreen() {
   );
   // Ids the last batch produced, so its rows can be summarised in the sheet.
   const [lastBatch, setLastBatch] = useState<string[] | null>(null);
+  // Ids collected while adding captures up; null when that mode is off. Counting
+  // a place usually means several shots from several angles, and until now the
+  // running total lived in the user's head.
+  const [session, setSession] = useState<string[] | null>(null);
   // Boxes are drawn over the image, so changing the threshold re-filters
   // immediately - no need to shoot again.
   const [threshold, setThreshold] = useState(SCORE_THRESHOLD);
@@ -192,8 +196,9 @@ export function DetectorScreen() {
   const {
     records: history,
     add: addHistory,
-    remove: removeScan,
-    clear: clearHistory,
+    removeMany: removeScans,
+    addPreview,
+    loadPreview,
   } = useScanHistory();
 
   // The result already written to history. Compared by identity: a new scan
@@ -214,9 +219,30 @@ export function DetectorScreen() {
         thumbnail: (source != null ? makeThumbnail(source) : null) ?? '',
         ...summarise(kept),
       });
+
+      // The bigger copy for reopening the scan, written to its own key so the
+      // history list stays small. Encoding it costs a few milliseconds and the
+      // write is not awaited - by now the image is already on screen.
+      const preview = source != null ? makePreview(source) : null;
+      if (preview != null) addPreview(id, preview);
+
+      // An updater, not `session` read from the closure: this callback is held
+      // by the scan effect and would otherwise need `session` in its deps,
+      // re-running the scan pipeline on every tap of the toggle.
+      setSession(prev => (prev == null ? null : [...prev, id]));
       return id;
     },
-    [addHistory],
+    [addHistory, addPreview],
+  );
+
+  // Derived from `history`, not accumulated in its own counters: a row deleted
+  // in the history sheet has to drop out of the running total as well.
+  const sessionTotal = useMemo(
+    () =>
+      session == null
+        ? null
+        : totalOf(history.filter(r => session.includes(r.id))),
+    [session, history],
   );
 
   const press = useSharedValue(0);
@@ -669,8 +695,12 @@ export function DetectorScreen() {
         />
       )}
 
-      {result != null && (
-        <ResultIsland peopleCount={peopleCount} objectCount={visible.length} />
+      {(result != null || session != null) && (
+        <ResultIsland
+          peopleCount={peopleCount}
+          objectCount={visible.length}
+          session={sessionTotal}
+        />
       )}
 
       {showTools && (
@@ -710,6 +740,15 @@ export function DetectorScreen() {
                   name="clock"
                   label={t.openHistory}
                   onPress={() => setHistoryOpen(true)}
+                />
+                <IconButton
+                  name="sum"
+                  label={session == null ? t.sumStart : t.sumStop}
+                  active={session != null}
+                  // Off then on starts a fresh total - there is no separate
+                  // reset to find, and stopping is what you do when the count
+                  // is finished anyway.
+                  onPress={() => setSession(prev => (prev == null ? [] : null))}
                 />
                 <IconButton
                   name="flip"
@@ -810,8 +849,8 @@ export function DetectorScreen() {
         <HistorySheet
           records={history}
           batch={lastBatch}
-          onRemove={removeScan}
-          onClear={clearHistory}
+          onRemoveMany={removeScans}
+          loadPreview={loadPreview}
           onClose={() => setHistoryOpen(false)}
         />
       )}

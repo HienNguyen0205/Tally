@@ -20,8 +20,9 @@ export interface ScanRecord {
 
 /**
  * How many scans to keep. Each record carries a ~4KB thumbnail, so 50 lands
- * around 200KB - comfortably inside AsyncStorage's per-app budget, which is
- * capped at 6MB by default on Android.
+ * around 200KB - well inside reason for a JSON blob parsed on every launch,
+ * regardless of the previews that live outside this list (see previewKey in
+ * useScanHistory.ts).
  */
 export const HISTORY_LIMIT = 50;
 
@@ -69,23 +70,76 @@ export function addRecord(
   return [record, ...history].slice(0, HISTORY_LIMIT);
 }
 
-const MINUTE = 60_000;
-const HOUR = 60 * MINUTE;
-const DAY = 24 * HOUR;
+/** Local midnight for a timestamp - the key a day section groups on. */
+function dayKey(at: number): number {
+  const d = new Date(at);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
 
 /**
- * How long ago a scan happened, in Vietnamese.
+ * "09:22" - when in the day a scan happened.
  *
- * `now` is a parameter rather than a `Date.now()` call so the result is a pure
- * function of its inputs and can be tested without freezing the clock.
+ * The day itself comes from the section header above the row, so repeating it
+ * per row ("3 ngày trước" under a heading that already says the date) only
+ * takes space. Built from Date getters rather than toLocaleTimeString: Intl is
+ * compiled out of some Hermes builds, and 24-hour HH:MM needs no locale data.
  */
-export function relativeTime(at: number, now: number): string {
-  const ago = Math.max(0, now - at);
+export function clockTime(at: number): string {
+  const d = new Date(at);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(
+    d.getMinutes(),
+  ).padStart(2, '0')}`;
+}
 
-  if (ago < MINUTE) return t.justNow;
-  if (ago < HOUR) return t.minutesAgo(Math.floor(ago / MINUTE));
-  if (ago < DAY) return t.hoursAgo(Math.floor(ago / HOUR));
-  return t.daysAgo(Math.floor(ago / DAY));
+export interface DaySection {
+  title: string;
+  data: ScanRecord[];
+}
+
+/**
+ * Splits the history into one section per calendar day, newest first.
+ *
+ * Days are local midnights, not `at / 86400000`: that would cut the day at UTC
+ * midnight, which lands mid-evening in Vietnam and would file an evening scan
+ * under tomorrow.
+ *
+ * `records` is already newest-first, so one pass suffices - no sort. `now` is a
+ * parameter for the same reason it is on the rest of this module: the result
+ * stays a pure function of its inputs and testable without freezing the clock.
+ */
+export function groupByDay(
+  records: readonly ScanRecord[],
+  now: number,
+): DaySection[] {
+  const today = dayKey(now);
+  // Not `today - 86400000`: a day is not always 24 hours once a timezone has a
+  // DST shift, and yesterday's header would silently fall back to a date.
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  const sections: DaySection[] = [];
+  let key: number | null = null;
+
+  for (const r of records) {
+    const day = dayKey(r.at);
+    if (day !== key) {
+      key = day;
+      const d = new Date(day);
+      sections.push({
+        title:
+          day === today
+            ? t.today
+            : day === yesterday.getTime()
+            ? t.yesterday
+            : `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`,
+        data: [],
+      });
+    }
+    sections[sections.length - 1].data.push(r);
+  }
+
+  return sections;
 }
 
 function isRecord(v: unknown): v is ScanRecord {

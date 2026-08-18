@@ -15,6 +15,8 @@ import { GlassSurface } from './GlassSurface';
 interface Props {
   peopleCount: number;
   objectCount: number;
+  /** Running total while captures are being added up; null when off. */
+  session?: { people: number; total: number; photos: number } | null;
 }
 
 const ease = Easing.bezier(...EASE_OUT_EXPO);
@@ -24,7 +26,11 @@ const ease = Easing.bezier(...EASE_OUT_EXPO);
  * is a result - before a scan there is nothing to say, and the viewfinder
  * deserves the space more than a hint line does.
  */
-export function ResultIsland({ peopleCount, objectCount }: Props) {
+export function ResultIsland({
+  peopleCount,
+  objectCount,
+  session = null,
+}: Props) {
   const { width, height } = useWindowDimensions();
   // Landscape: shift left to clear the shutter, which has moved to the right.
   const landscape = width > height;
@@ -63,7 +69,7 @@ export function ResultIsland({ peopleCount, objectCount }: Props) {
       style={[styles.anchor, landscape && styles.anchorLandscape]}
       pointerEvents="none"
     >
-      <Animated.View style={shellStyle}>
+      <Animated.View style={[shellStyle, styles.stack]}>
         <GlassSurface pill contentStyle={styles.corePill}>
           <View
             style={[
@@ -80,6 +86,22 @@ export function ResultIsland({ peopleCount, objectCount }: Props) {
             <Text style={styles.unit}>{t.objects}</Text>
           </Animated.View>
         </GlassSurface>
+
+        {/* The running total gets its own pill rather than another row inside
+            the first: the top line is what this shot found, and merging the two
+            makes it ambiguous which number the big one is. */}
+        {session != null && (
+          <GlassSurface pill contentStyle={styles.sumPill}>
+            <Text style={styles.sumLabel}>{t.sumTotal}</Text>
+            <Text style={styles.sumCount}>{session.people}</Text>
+            <Text style={styles.unit}>{t.people}</Text>
+            <View style={styles.dividerV} />
+            <Text style={styles.sumCount}>{session.total}</Text>
+            <Text style={styles.unit}>{t.objects}</Text>
+            <View style={styles.dividerV} />
+            <Text style={styles.unit}>{t.sumPhotos(session.photos)}</Text>
+          </GlassSurface>
+        )}
       </Animated.View>
     </View>
   );
@@ -93,6 +115,9 @@ const styles = StyleSheet.create({
     right: 0,
     alignItems: 'center',
   },
+  // Both pills centre on each other in portrait and left-align in landscape,
+  // matching whatever the anchor above decided.
+  stack: { alignItems: 'center' },
   anchorLandscape: {
     top: 28,
     left: 28,
@@ -109,6 +134,27 @@ const styles = StyleSheet.create({
   },
 
   statusDot: { width: 7, height: 7, borderRadius: 3.5 },
+
+  sumPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 7,
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+  },
+  sumLabel: {
+    color: COLORS.accent,
+    fontFamily: FONT.semibold,
+    fontSize: 11,
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
+  sumCount: {
+    color: COLORS.textPrimary,
+    fontFamily: FONT.semibold,
+    fontSize: 14,
+  },
 
   count: {
     color: COLORS.textPrimary,

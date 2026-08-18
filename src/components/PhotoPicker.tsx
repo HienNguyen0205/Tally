@@ -18,6 +18,7 @@ import { Skia, type SkData } from '@shopify/react-native-skia';
 
 import { COLORS, FONT } from '../shared/theme';
 import { t } from '../shared/strings';
+import { Checkbox } from './Checkbox';
 
 const PAGE = 60;
 const COLUMNS = 3;
@@ -233,11 +234,7 @@ export function PhotoPicker({
                     <View
                       style={[styles.picked, { width: cell, height: cell }]}
                     >
-                      <View style={styles.tick}>
-                        {/* A glyph, not the Skia <Icon>: a Canvas renders
-                            nothing inside a Modal on Android. */}
-                        <Text style={styles.tickMark}>✓</Text>
-                      </View>
+                      <Checkbox selected size={20} />
                     </View>
                   )}
                 </Pressable>
@@ -321,15 +318,6 @@ const styles = StyleSheet.create({
     borderColor: COLORS.accent,
     backgroundColor: 'rgba(0,230,118,0.22)',
   },
-  tick: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.accent,
-  },
-  tickMark: { color: '#04120A', fontFamily: FONT.semibold, fontSize: 12 },
   footer: {
     position: 'absolute',
     left: 0,

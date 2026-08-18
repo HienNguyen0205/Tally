@@ -1,8 +1,9 @@
 const {
   HISTORY_LIMIT,
   addRecord,
+  clockTime,
+  groupByDay,
   parseHistory,
-  relativeTime,
   summarise,
   totalOf,
 } = require('../src/shared/history');
@@ -123,26 +124,53 @@ describe('parseHistory', () => {
 // Asserted against `t` rather than literal text: the wording depends on the
 // device language, and what actually needs pinning is which unit gets picked at
 // each boundary.
-describe('relativeTime', () => {
-  const NOW = 1_000_000_000;
 
-  it('reads as just now under a minute', () => {
-    expect(relativeTime(NOW - 30_000, NOW)).toBe(t.justNow);
+// Local midnights, so these read the same in any timezone the suite runs in.
+function ts(y, m, d, hh = 12, mm = 0) {
+  return new Date(y, m - 1, d, hh, mm).getTime();
+}
+
+describe('clockTime', () => {
+  it('pads to HH:MM', () => {
+    expect(clockTime(ts(2026, 8, 18, 9, 5))).toBe('09:05');
+    expect(clockTime(ts(2026, 8, 18, 23, 59))).toBe('23:59');
+  });
+});
+
+describe('groupByDay', () => {
+  const now = ts(2026, 8, 18, 10, 0);
+
+  it('names today and yesterday, and dates the rest', () => {
+    const sections = groupByDay(
+      [
+        rec('a', ts(2026, 8, 18, 9)),
+        rec('b', ts(2026, 8, 17, 9)),
+        rec('c', ts(2026, 8, 15, 9)),
+      ],
+      now,
+    );
+
+    expect(sections.map(s => s.title)).toEqual([t.today, t.yesterday, '15/8/2026']);
   });
 
-  it('switches unit at each boundary', () => {
-    expect(relativeTime(NOW - 60_000, NOW)).toBe(t.minutesAgo(1));
-    expect(relativeTime(NOW - 3_600_000, NOW)).toBe(t.hoursAgo(1));
-    expect(relativeTime(NOW - 86_400_000, NOW)).toBe(t.daysAgo(1));
+  it('keeps several scans from one day in one section', () => {
+    const sections = groupByDay(
+      [rec('a', ts(2026, 8, 18, 9)), rec('b', ts(2026, 8, 18, 8))],
+      now,
+    );
+
+    expect(sections).toHaveLength(1);
+    expect(sections[0].data.map(r => r.id)).toEqual(['a', 'b']);
   });
 
-  it('rounds down within a unit rather than up', () => {
-    expect(relativeTime(NOW - 119_000, NOW)).toBe(t.minutesAgo(1));
+  it('cuts the day at local midnight, not UTC', () => {
+    // 23:30 local is already the next UTC day east of Greenwich. Dividing the
+    // timestamp by 86400000 would file this under tomorrow.
+    const sections = groupByDay([rec('a', ts(2026, 8, 18, 23, 30))], now);
+    expect(sections[0].title).toBe(t.today);
   });
 
-  // Device clocks move backwards - NTP corrections, manual changes, timezone
-  // edits. A record must never read as "-3 minutes ago".
-  it('clamps a timestamp from the future to just now', () => {
-    expect(relativeTime(NOW + 500_000, NOW)).toBe(t.justNow);
+  it('returns nothing for an empty history', () => {
+    expect(groupByDay([], now)).toEqual([]);
   });
 });
