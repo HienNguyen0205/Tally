@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { StatusBar as RNStatusBar, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { DetectorScreen } from './src/screens/DetectorScreen';
@@ -9,7 +10,9 @@ import { t, useLocale } from './src/i18n';
 
 /**
  * The gate: no camera, no history, nothing else in the app is reachable
- * without a real signed-in Supabase session. `loading` covers the moment
+ * without a real signed-in Supabase session - unless `guestMode` is set, in
+ * which case the camera is reachable but useScanHistory (see DetectorScreen)
+ * disables every write, local and cloud alike. `loading` covers the moment
  * before the first session check resolves - reusing LaunchScreen there
  * rather than a blank frame, since it already exists for exactly this kind
  * of "something is being checked, do not flash empty" beat.
@@ -23,6 +26,10 @@ import { t, useLocale } from './src/i18n';
 function Root() {
   const { loading, email } = useAuth();
   const settings = useSettings();
+  // Not persisted on purpose: guest mode saves nothing, so there is nothing
+  // for a cold start to remember either - every launch re-asks, same as it
+  // would for someone who has never opened the app before.
+  const [guestMode, setGuestMode] = useState(false);
 
   // Subscribed only so a call to setLocale() (from SettingsScreen) forces this
   // component to re-render - nothing here reads the return value. Since
@@ -32,10 +39,22 @@ function Root() {
   useLocale();
 
   if (loading) return <LaunchScreen status={t('loadingAccount')} />;
-  return email != null ? (
-    <DetectorScreen settings={settings} />
-  ) : (
-    <AuthScreen />
+
+  if (email == null && !guestMode) {
+    return <AuthScreen onContinueAsGuest={() => setGuestMode(true)} />;
+  }
+  return (
+    <DetectorScreen
+      settings={settings}
+      // A real session always wins, even with leftover guestMode state - the
+      // only way in here with `email == null` is guestMode already being
+      // true, but deriving it from `email` rather than trusting the flag
+      // means a session that appears mid-guest-session (signing in from
+      // Settings) turns history writes back on the moment it lands, with no
+      // extra plumbing to reset the flag itself.
+      guest={email == null}
+      onLeaveGuest={() => setGuestMode(false)}
+    />
   );
 }
 

@@ -18,4 +18,13 @@ module.exports = {
   // node_modules/react-native-mmkv/lib/createMMKV/createMMKV.js). The old
   // AsyncStorage-backed version of this file needed one, since that package's
   // real native module throws under Jest with no device to back it.
+  //
+  // react-native-true-sheet does need one - unlike MMKV it has no built-in
+  // Jest auto-detection, and ships its mock behind an opt-in `/mock` subpath
+  // instead (see AuthScreen.tsx, LanguageSheet.tsx). No test imports either
+  // file yet, but a Jest run without this would fail the moment one does.
+  moduleNameMapper: {
+    '^@lodev09/react-native-true-sheet$':
+      '@lodev09/react-native-true-sheet/mock',
+  },
 };

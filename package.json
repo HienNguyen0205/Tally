@@ -16,6 +16,7 @@
     "postinstall": "patch-package"
   },
   "dependencies": {
+    "@lodev09/react-native-true-sheet": "^3.11.12",
     "@react-native-camera-roll/camera-roll": "^7.10.2",
     "@react-native-community/blur": "^4.4.1",
     "@shopify/react-native-skia": "^2.11.0",

@@ -123,9 +123,14 @@ export const en: InflectedCatalog = {
     'Permanently deletes %{count} saved on this device and in the cloud. This cannot be undone.',
   scanCount: { one: '%{count} scan', other: '%{count} scans' },
 
+  changeLanguage: 'Change language',
   authEyebrow: 'ACCOUNT',
   signedInAs: 'Signed in: %{email}',
   authSubtitle: 'Sign in to start counting',
+  continueAsGuest: 'Continue without an account',
+  guestModeNotice:
+    "You're using guest mode. Scan history won't be saved on this device or in the cloud.",
+  guestSignInCta: 'Sign in or create an account',
   emailLabel: 'Email',
   emailHint: 'you@example.com',
   passwordLabel: 'Password',
@@ -135,9 +140,9 @@ export const en: InflectedCatalog = {
   signOut: 'Sign out',
   signOutConfirmTitle: 'Sign out?',
   signOutConfirmBody: 'Sign out of %{email}.',
-  tabRegister: 'Create account',
+  tabRegister: 'Sign up',
   tabSignIn: 'Sign in',
-  registerSubmit: 'Create account',
+  registerSubmit: 'Register',
   signInSubmit: 'Sign in',
   confirmEmailSent:
     'Confirmation email sent to %{email}. Check your inbox to finish.',

@@ -77,6 +77,9 @@ export function FormField({
       [0, 1],
       ['rgba(255,255,255,0.045)', 'rgba(0,230,118,0.07)'],
     ),
+    // A small lift rather than just a colour change - the field visibly comes
+    // toward you when it takes focus, not just changes tint.
+    transform: [{ scale: 1 + 0.012 * focus.value }],
   }));
 
   return (

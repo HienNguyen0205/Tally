@@ -40,8 +40,15 @@ const previewKey = (id: string) => `tally.preview.${id}`;
  * The next list is computed from a ref rather than inside a state updater:
  * `add` is called from a scan callback that can hold a stale closure, and
  * writing to storage inside an updater would fire twice under StrictMode.
+ *
+ * `guest` disables every write, local and cloud alike - a session-less user
+ * (see AuthScreen's "continue without an account") gets a working camera and
+ * a history sheet that simply never fills, rather than history quietly
+ * piling up in MMKV under an identity Supabase never sees, orphaned the
+ * moment they do create an account. The hook still runs unconditionally
+ * (rules of hooks), each write just checks `guest` first.
  */
-export function useScanHistory() {
+export function useScanHistory(guest: boolean) {
   const [records, setRecords] = useState<ScanRecord[]>([]);
   const [loaded, setLoaded] = useState(false);
   const current = useRef<ScanRecord[]>([]);
@@ -77,6 +84,12 @@ export function useScanHistory() {
 
   useEffect(() => {
     let cancelled = false;
+    // A guest has no MMKV history to read and no session for restoreFromCloud
+    // to key off - records simply stays [] for the life of the session.
+    if (guest) {
+      setLoaded(true);
+      return;
+    }
 
     (async () => {
       // The read itself is synchronous (MMKV), but the whole effect body stays
@@ -119,16 +132,17 @@ export function useScanHistory() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [guest]);
 
   const add = useCallback(
     (record: ScanRecord) => {
+      if (guest) return;
       commit(addRecord(current.current, record));
       uploadScan(record, record.thumbnail).catch(e =>
         console.warn('[useScanHistory] could not upload scan', e),
       );
     },
-    [commit],
+    [commit, guest],
   );
 
   /**
@@ -142,13 +156,14 @@ export function useScanHistory() {
    */
   const removeMany = useCallback(
     (ids: readonly string[]) => {
+      if (guest) return;
       const drop = new Set(ids);
       commit(current.current.filter(r => !drop.has(r.id)));
       deleteScans(ids).catch(e =>
         console.warn('[useScanHistory] could not delete cloud scans', e),
       );
     },
-    [commit],
+    [commit, guest],
   );
 
   /** Local-only write, used both by addPreview and by loadPreview's cloud
@@ -167,12 +182,13 @@ export function useScanHistory() {
    *  nothing to show. */
   const addPreview = useCallback(
     (id: string, data: string) => {
+      if (guest) return;
       cacheLocally(id, data);
       uploadPreview(id, data).catch(e =>
         console.warn('[useScanHistory] could not upload preview', e),
       );
     },
-    [cacheLocally],
+    [cacheLocally, guest],
   );
 
   /**
@@ -184,6 +200,11 @@ export function useScanHistory() {
    */
   const loadPreview = useCallback(
     async (id: string) => {
+      // Unreachable in practice - a guest's `records` is always [], so there
+      // is never a row to open a preview for - but guarded anyway rather than
+      // relying on that.
+      if (guest) return null;
+
       let cached: string | null = null;
       try {
         cached = storage.getString(previewKey(id)) ?? null;
@@ -196,7 +217,7 @@ export function useScanHistory() {
       if (remote != null) cacheLocally(id, remote);
       return remote;
     },
-    [cacheLocally],
+    [cacheLocally, guest],
   );
 
   return { records, loaded, add, removeMany, addPreview, loadPreview };

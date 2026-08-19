@@ -159,9 +159,14 @@ function StateScreen({
 
 interface Props {
   settings: ReturnType<typeof useSettings>;
+  /** No signed-in session - history recording is disabled, see useScanHistory. */
+  guest: boolean;
+  /** Drops guest mode, handing control back to App.tsx's Root - which falls
+   *  back to AuthScreen the moment there is still no real session. */
+  onLeaveGuest: () => void;
 }
 
-export function DetectorScreen({ settings }: Props) {
+export function DetectorScreen({ settings, guest, onLeaveGuest }: Props) {
   const { hasPermission, requestPermission } = useCameraPermission();
   const insets = useSafeAreaInsets();
 
@@ -212,7 +217,7 @@ export function DetectorScreen({ settings }: Props) {
     removeMany: removeScans,
     addPreview,
     loadPreview,
-  } = useScanHistory();
+  } = useScanHistory(guest);
 
   // The result already written to history. Compared by identity: a new scan
   // always makes a new array, while moving the threshold or hiding a class does
@@ -894,6 +899,8 @@ export function DetectorScreen({ settings }: Props) {
           settings={settings}
           historyCount={history.length}
           onClearHistory={() => removeScans(history.map(r => r.id))}
+          guest={guest}
+          onLeaveGuest={onLeaveGuest}
           onClose={() => setSettingsOpen(false)}
         />
       )}

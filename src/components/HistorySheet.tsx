@@ -73,7 +73,7 @@ function CloudIcon({
       <View style={puff(0.7, 0.56, 0.21)} />
       <View
         style={{
-          position: 'absolute',
+          ...styles.absPos,
           left: size * 0.14,
           top: size * 0.52,
           width: size * 0.72,
@@ -108,7 +108,7 @@ function ListCheckIcon({ size = 20 }: { size?: number }) {
   });
   return (
     <View style={{ width: size, height: size }}>
-      <View style={{ position: 'absolute', left: 0, top: (size - box) / 2 }}>
+      <View style={{ ...styles.absPos, left: 0 * size, top: (size - box) / 2 }}>
         <Checkbox selected size={box} />
       </View>
       <View style={bar(size * 0.36 - barH / 2)} />
@@ -570,6 +570,7 @@ export function HistorySheet({
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#050505' },
+  absPos: { position: 'absolute' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',

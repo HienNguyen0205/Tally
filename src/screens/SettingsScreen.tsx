@@ -63,9 +63,14 @@ function Row({
 
 interface Props {
   settings: ReturnType<typeof useSettings>;
-  /** For the clear-history confirmation and its disabled state. */
+  /** For the clear-history confirmation and its disabled state. Always 0 for
+   *  a guest, since useScanHistory never records anything for one. */
   historyCount: number;
   onClearHistory: () => void;
+  /** No signed-in session - the Account section offers a way out instead of
+   *  the usual sign-out. */
+  guest: boolean;
+  onLeaveGuest: () => void;
   onClose: () => void;
 }
 
@@ -78,6 +83,8 @@ export function SettingsScreen({
   settings,
   historyCount,
   onClearHistory,
+  guest,
+  onLeaveGuest,
   onClose,
 }: Props) {
   const insets = useSafeAreaInsets();
@@ -173,16 +180,34 @@ export function SettingsScreen({
           </Section>
 
           <Section title={t('authEyebrow')}>
-            {email != null && (
-              <Text style={styles.account}>{t('signedInAs', { email })}</Text>
+            {guest ? (
+              <>
+                <Text style={styles.rowHint}>{t('guestModeNotice')}</Text>
+                <Pressable
+                  style={styles.cta}
+                  accessibilityRole="button"
+                  onPress={() => {
+                    onLeaveGuest();
+                    onClose();
+                  }}
+                >
+                  <Text style={styles.ctaText}>{t('guestSignInCta')}</Text>
+                </Pressable>
+              </>
+            ) : (
+              <>
+                {email != null && (
+                  <Text style={styles.account}>{t('signedInAs', { email })}</Text>
+                )}
+                <Pressable
+                  style={styles.danger}
+                  accessibilityRole="button"
+                  onPress={confirmSignOut}
+                >
+                  <Text style={styles.dangerText}>{t('signOut')}</Text>
+                </Pressable>
+              </>
             )}
-            <Pressable
-              style={styles.danger}
-              accessibilityRole="button"
-              onPress={confirmSignOut}
-            >
-              <Text style={styles.dangerText}>{t('signOut')}</Text>
-            </Pressable>
           </Section>
         </ScrollView>
       </View>
@@ -256,6 +281,19 @@ const styles = StyleSheet.create({
   },
   dangerText: {
     color: '#FFFFFF',
+    fontFamily: FONT.semibold,
+    fontSize: 13,
+  },
+  cta: {
+    alignSelf: 'flex-start',
+    marginTop: 4,
+    borderRadius: 999,
+    paddingVertical: 11,
+    paddingHorizontal: 26,
+    backgroundColor: COLORS.accent,
+  },
+  ctaText: {
+    color: COLORS.onAccent,
     fontFamily: FONT.semibold,
     fontSize: 13,
   },

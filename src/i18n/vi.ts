@@ -131,9 +131,14 @@ export const vi = {
   scanCount: '%{count} lần quét',
 
   // Account
+  changeLanguage: 'Đổi ngôn ngữ',
   authEyebrow: 'TÀI KHOẢN',
   signedInAs: 'Đã đăng nhập: %{email}',
   authSubtitle: 'Đăng nhập để bắt đầu đếm',
+  continueAsGuest: 'Tiếp tục không cần tài khoản',
+  guestModeNotice:
+    'Đang dùng ở chế độ khách. Lịch sử quét sẽ không được lưu trên máy này hay trên đám mây.',
+  guestSignInCta: 'Đăng nhập hoặc tạo tài khoản',
   emailLabel: 'Email',
   emailHint: 'ban@vidu.com',
   passwordLabel: 'Mật khẩu',
