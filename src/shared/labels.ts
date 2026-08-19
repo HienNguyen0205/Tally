@@ -1,4 +1,4 @@
-import { locale } from './strings';
+import { locale } from '../i18n';
 
 /**
  * YOLO's 80 COCO labels, taken from metadata.json inside the .tflite file.
@@ -186,4 +186,56 @@ export function label(classId: number): string {
   const name = COCO_LABELS[classId];
   if (name == null) return `#${classId}`;
   return locale === 'vi' ? VI[name] ?? name : name;
+}
+
+/**
+ * English plurals that a suffix rule gets wrong: an irregular noun ('person'),
+ * an invariant one ('sheep', 'scissors'), or a COCO name that is already
+ * plural on its own ('skis' - one ski board is still tagged as the class
+ * 'skis', not 'ski').
+ */
+const IRREGULAR_PLURAL_EN: Record<string, string> = {
+  person: 'people',
+  sheep: 'sheep',
+  skis: 'skis',
+  scissors: 'scissors',
+  knife: 'knives',
+  mouse: 'mice',
+};
+
+/**
+ * English pluralises the last word of a (possibly multi-word) COCO name by the
+ * regular suffix rule, unless it is one of the six exceptions above - checked
+ * because it is cheaper and safer than an 80-entry table, but every COCO name
+ * was run through it once by hand to confirm the rest come out right (see
+ * assets/models/README.md for the source list).
+ */
+function pluralizeEn(name: string): string {
+  const words = name.split(' ');
+  const last = words[words.length - 1];
+  const irregular = IRREGULAR_PLURAL_EN[last];
+  const plural =
+    irregular ??
+    (/(?:s|x|z|ch|sh)$/.test(last)
+      ? `${last}es`
+      : /[^aeiou]y$/.test(last)
+        ? `${last.slice(0, -1)}ies`
+        : `${last}s`);
+  return [...words.slice(0, -1), plural].join(' ');
+}
+
+/**
+ * The class name inflected for `count`, in the device's language.
+ *
+ * Vietnamese does not inflect nouns for number, so `label()` already returns
+ * the right word for any count - this only branches for English. Only
+ * `HistorySheet`'s scan breakdown needs a plural name in a sentence like
+ * "3 people, 2 boats"; every other caller shows a name beside its own count
+ * badge rather than inside one string, where the singular form reads fine
+ * regardless of the number.
+ */
+export function labelForCount(classId: number, count: number): string {
+  const name = label(classId);
+  if (locale !== 'en' || count === 1) return name;
+  return pluralizeEn(name);
 }

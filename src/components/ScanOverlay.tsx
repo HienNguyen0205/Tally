@@ -9,7 +9,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { COLORS, EASE_OUT_EXPO, FONT } from '../shared/theme';
-import { t } from '../shared/strings';
+import { t } from '../i18n';
 import { GlassSurface } from './GlassSurface';
 
 const SWEEP_MS = 1100;
@@ -89,7 +89,7 @@ export function ScanOverlay({ label }: { label?: string }) {
       <Animated.View style={[styles.labelAnchor, labelStyle]}>
         <GlassSurface pill contentStyle={styles.labelCore}>
           <View style={styles.pulse} />
-          <Text style={styles.label}>{label ?? t.scanning}</Text>
+          <Text style={styles.label}>{label ?? t('scanning')}</Text>
         </GlassSurface>
       </Animated.View>
     </View>

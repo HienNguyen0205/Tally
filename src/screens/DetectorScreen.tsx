@@ -47,9 +47,9 @@ import {
   passesThreshold,
   type Detection,
 } from '../shared/detections';
-import { COLORS, EASE_OUT_EXPO, FONT, RADIUS } from '../shared/theme';
+import { COLORS, EASE_OUT_EXPO, FONT } from '../shared/theme';
 import { summarise, totalOf } from '../shared/history';
-import { t } from '../shared/strings';
+import { t } from '../i18n';
 import { makePreview, makeThumbnail } from '../shared/thumbnail';
 import { useAlert } from '../hooks/useAlert';
 import { useSavePhoto } from '../hooks/useSavePhoto';
@@ -60,6 +60,7 @@ import { useScanHistory } from '../hooks/useScanHistory';
 import { ResultIsland } from '../components/ResultIsland';
 import { ScanOverlay } from '../components/ScanOverlay';
 import { GlassSurface } from '../components/GlassSurface';
+import { CtaButton } from '../components/CtaButton';
 import { FocusRing } from '../components/FocusRing';
 import { IconButton } from '../components/IconButton';
 import { ThresholdSlider } from '../components/ThresholdSlider';
@@ -137,16 +138,11 @@ function StateScreen({
         {body != null && <Text style={styles.stateBody}>{body}</Text>}
 
         {action != null && (
-          <Pressable
+          <CtaButton
             style={styles.cta}
-            accessibilityRole="button"
+            label={action.label}
             onPress={action.onPress}
-          >
-            <Text style={styles.ctaText}>{action.label}</Text>
-            <View style={styles.ctaIcon}>
-              <Text style={styles.ctaArrow}>↗</Text>
-            </View>
-          </Pressable>
+          />
         )}
       </GlassSurface>
     </View>
@@ -441,7 +437,7 @@ export function DetectorScreen() {
         setMode('idle');
         // Say it out loud: tapping a photo and having nothing happen just reads
         // as a broken app.
-        Alert.alert(t.scanFailed, String(e));
+        Alert.alert(t('scanFailed'), String(e));
       } finally {
         setBatch(null);
         setScanBusy(false);
@@ -482,16 +478,16 @@ export function DetectorScreen() {
   const { camera, device } = cam;
 
   if (device == null) {
-    return <StateScreen eyebrow={t.deviceEyebrow} title={t.noCamera} />;
+    return <StateScreen eyebrow={t('deviceEyebrow')} title={t('noCamera')} />;
   }
 
   if (!hasPermission) {
     return (
       <StateScreen
-        eyebrow={t.permissionEyebrow}
-        title={t.cameraPermissionTitle}
-        body={t.cameraPermissionBody}
-        action={{ label: t.grantPermission, onPress: requestPermission }}
+        eyebrow={t('permissionEyebrow')}
+        title={t('cameraPermissionTitle')}
+        body={t('cameraPermissionBody')}
+        action={{ label: t('grantPermission'), onPress: requestPermission }}
       />
     );
   }
@@ -503,14 +499,14 @@ export function DetectorScreen() {
     objectDetection.state === 'loading' ||
     (objectDetection.state === 'error' && delegates.length > 0)
   ) {
-    return <LaunchScreen status={t.loadingModel} />;
+    return <LaunchScreen status={t('loadingModel')} />;
   }
 
   if (objectDetection.state === 'error') {
     return (
       <StateScreen
-        eyebrow={t.errorEyebrow}
-        title={t.modelLoadFailed}
+        eyebrow={t('errorEyebrow')}
+        title={t('modelLoadFailed')}
         body={String(objectDetection.error)}
       />
     );
@@ -519,8 +515,8 @@ export function DetectorScreen() {
   if (resizerError != null) {
     return (
       <StateScreen
-        eyebrow={t.errorEyebrow}
-        title={t.resizerFailed}
+        eyebrow={t('errorEyebrow')}
+        title={t('resizerFailed')}
         body={String(resizerError)}
       />
     );
@@ -628,7 +624,7 @@ export function DetectorScreen() {
       {mode === 'idle' && (
         <Pressable
           style={StyleSheet.absoluteFill}
-          accessibilityLabel={t.tapToFocus}
+          accessibilityLabel={t('tapToFocus')}
           onPress={e => {
             const { locationX, locationY } = e.nativeEvent;
             cam.focusAt(locationX, locationY);
@@ -649,7 +645,7 @@ export function DetectorScreen() {
       {picked != null && (
         <Pressable
           style={StyleSheet.absoluteFill}
-          accessibilityLabel={t.closeDetail}
+          accessibilityLabel={t('closeDetail')}
           onPress={() => setPicked(null)}
         />
       )}
@@ -689,7 +685,7 @@ export function DetectorScreen() {
         <ScanOverlay
           label={
             batch != null
-              ? t.scanningProgress(batch.done + 1, batch.total)
+              ? t('scanningProgress', { done: batch.done + 1, total: batch.total })
               : undefined
           }
         />
@@ -724,7 +720,7 @@ export function DetectorScreen() {
               <>
                 <IconButton
                   name="bolt"
-                  label={cam.torch === 'on' ? t.torchOff : t.torchOn}
+                  label={cam.torch === 'on' ? t('torchOff') : t('torchOn')}
                   active={cam.torch === 'on'}
                   // The front camera has no torch, so lock it out rather than
                   // letting the tap do nothing.
@@ -733,17 +729,17 @@ export function DetectorScreen() {
                 />
                 <IconButton
                   name="image"
-                  label={t.pickFromLibrary}
+                  label={t('pickFromLibrary')}
                   onPress={() => setPickerOpen(true)}
                 />
                 <IconButton
                   name="clock"
-                  label={t.openHistory}
+                  label={t('openHistory')}
                   onPress={() => setHistoryOpen(true)}
                 />
                 <IconButton
                   name="sum"
-                  label={session == null ? t.sumStart : t.sumStop}
+                  label={session == null ? t('sumStart') : t('sumStop')}
                   active={session != null}
                   // Off then on starts a fresh total - there is no separate
                   // reset to find, and stopping is what you do when the count
@@ -752,7 +748,7 @@ export function DetectorScreen() {
                 />
                 <IconButton
                   name="flip"
-                  label={t.flipCamera}
+                  label={t('flipCamera')}
                   onPress={cam.flip}
                 />
               </>
@@ -807,7 +803,7 @@ export function DetectorScreen() {
               style={styles.shutterShell}
               disabled={scanning}
               accessibilityRole="button"
-              accessibilityLabel={t.shutter}
+              accessibilityLabel={t('shutter')}
               onPressIn={() => {
                 press.value = withTiming(1, {
                   duration: 180,
@@ -895,29 +891,9 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
 
-  // --- CTA ---
-  cta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    gap: 12,
-    marginTop: 26,
-    backgroundColor: COLORS.accent,
-    borderRadius: RADIUS.pillShell,
-    paddingLeft: 22,
-    paddingRight: 6,
-    paddingVertical: 6,
-  },
-  ctaText: { color: '#04120A', fontFamily: FONT.semibold, fontSize: 14 },
-  ctaIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(0,0,0,0.14)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  ctaArrow: { color: '#04120A', fontFamily: FONT.semibold, fontSize: 14 },
+  // --- CTA --- (the pill itself lives in CtaButton; this is only its place
+  // in the status card)
+  cta: { alignSelf: 'flex-start', marginTop: 26 },
 
   // --- Camera toolbar ---
   tools: { position: 'absolute', alignItems: 'center', gap: 10 },

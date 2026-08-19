@@ -52,6 +52,9 @@ yarn-error.log
 # Local signing config. .env.default and .env.example stay tracked on purpose.
 fastlane/.env
 fastlane/.env.local
+
+# Supabase URL/anon key. .env.example stays tracked on purpose.
+.env
 # Regenerated on every lane run; the real docs live in the top-level README.
 fastlane/README.md
 **/fastlane/report.xml

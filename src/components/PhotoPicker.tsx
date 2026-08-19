@@ -17,7 +17,7 @@ import { CameraRoll } from '@react-native-camera-roll/camera-roll';
 import { Skia, type SkData } from '@shopify/react-native-skia';
 
 import { COLORS, FONT } from '../shared/theme';
-import { t } from '../shared/strings';
+import { t } from '../i18n';
 import { Checkbox } from './Checkbox';
 
 const PAGE = 60;
@@ -135,7 +135,7 @@ export function PhotoPicker({
   const load = useCallback(async () => {
     try {
       if (!(await ensurePhotoPermission())) {
-        setError(t.needPhotoPermission);
+        setError(t('needPhotoPermission'));
         return;
       }
       const page = await CameraRoll.getPhotos({
@@ -146,7 +146,7 @@ export function PhotoPicker({
       setLimited(page.limited === true);
     } catch (e) {
       console.warn('[PhotoPicker] could not read the photo library', e);
-      setError(t.cannotReadLibrary);
+      setError(t('cannotReadLibrary'));
     }
   }, []);
 
@@ -163,10 +163,10 @@ export function PhotoPicker({
     >
       <View style={[styles.root, { paddingTop: insets.top }]}>
         <View style={styles.header}>
-          <Text style={styles.title}>{t.pickTitle}</Text>
+          <Text style={styles.title}>{t('pickTitle')}</Text>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={t.close}
+            accessibilityLabel={t('close')}
             hitSlop={16}
             onPress={onClose}
           >
@@ -179,7 +179,7 @@ export function PhotoPicker({
         {limited && uris != null && uris.length > 0 && (
           <Pressable style={styles.notice} onPress={load}>
             <Text style={styles.noticeText}>
-              {t.limitedNotice(uris.length)}
+              {t('limitedNotice', { count: uris.length })}
             </Text>
           </Pressable>
         )}
@@ -196,12 +196,12 @@ export function PhotoPicker({
           <View style={styles.center}>
             <Text style={styles.message}>
               {limited
-                ? t.noPhotosGranted
-                : t.noPhotos}
+                ? t('noPhotosGranted')
+                : t('noPhotos')}
             </Text>
             {limited && (
               <Pressable style={styles.cta} onPress={load}>
-                <Text style={styles.ctaText}>{t.grantMorePhotos}</Text>
+                <Text style={styles.ctaText}>{t('grantMorePhotos')}</Text>
               </Pressable>
             )}
           </View>
@@ -221,7 +221,7 @@ export function PhotoPicker({
                 <Pressable
                   accessibilityRole="imagebutton"
                   accessibilityLabel={
-                    isSelected ? t.deselectPhoto : t.selectPhoto
+                    isSelected ? t('deselectPhoto') : t('selectPhoto')
                   }
                   accessibilityState={{ selected: isSelected }}
                   onPress={() => toggle(item)}
@@ -250,7 +250,9 @@ export function PhotoPicker({
               accessibilityRole="button"
               onPress={() => onPick([...selected])}
             >
-              <Text style={styles.ctaText}>{t.scanSelected(selected.size)}</Text>
+              <Text style={styles.ctaText}>
+                {t('scanSelected', { count: selected.size })}
+              </Text>
             </Pressable>
           </View>
         )}

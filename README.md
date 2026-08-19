@@ -6,7 +6,9 @@ on-device, freezes that frame, and lays labelled bounding boxes over it so you c
 inspect, re-filter and save the result.
 
 It recognises all 80 COCO classes, with people highlighted in green and everything
-else in amber. Everything runs on the device — no image ever leaves the phone.
+else in amber. Detection itself is fully on-device — no frame ever leaves the
+phone. History is backed by a Supabase account: signing in syncs scans (and
+their thumbnails) across devices and restores them after a reinstall.
 
 > The bundled model is Ultralytics YOLO26n, licensed **AGPL-3.0**. Review the terms
 > (or obtain a commercial licence) before shipping a closed-source build.
@@ -55,6 +57,16 @@ else in amber. Everything runs on the device — no image ever leaves the phone.
 - Haptic alert when people are detected, and saving the annotated image to the
   device photo library.
 - Adaptive portrait/landscape layout for every control cluster.
+- **Account-gated with Supabase auth.** [`AuthScreen`](src/screens/AuthScreen.tsx)
+  (email/password register or sign in) is the only thing rendered until
+  [`useAuth`](src/hooks/useAuth.ts) reports a real, non-anonymous session — the
+  camera in `DetectorScreen` is unreachable otherwise, see [App.tsx](App.tsx).
+- **History synced to the cloud.** Each scan uploads its row and thumbnail to
+  Supabase in the background ([`uploadScan`](src/shared/cloudSync.ts)); local
+  `AsyncStorage` stays the fast path the app actually reads from, and the cloud
+  copy is what [`restoreFromCloud`](src/shared/cloudSync.ts) pulls back down
+  when local storage is empty (reinstall or a new device). Full-size previews
+  sync the same way, lazily, only when a scan is opened.
 
 ## Requirements
 
@@ -63,6 +75,7 @@ else in amber. Everything runs on the device — no image ever leaves the phone.
 - **Android**: `minSdkVersion 26`, `compileSdk`/`targetSdk 36`
 - **iOS**: React Native's `min_ios_version_supported`, plus CocoaPods via Bundler
 - A physical device with a camera — this pipeline does not run on simulators
+- A network connection for sign-in and history sync (detection itself works offline)
 
 ## Installation
 
@@ -76,6 +89,18 @@ in release builds the `.tflite` asset is bundled into the APK, so
 `Image.resolveAssetSource()` returns a **resource name** rather than a URL,
 making `URL(path)` throw `MalformedURLException` and the model fail to load. The
 patch resolves it as a raw/drawable resource first.
+
+Sign-in and history sync need a Supabase project URL and anon key, read at
+build time via [`react-native-dotenv`](https://github.com/goatandsheep/react-native-dotenv)
+(`@env` in [`src/shared/supabase.ts`](src/shared/supabase.ts)). Copy the
+example and fill in your project's values:
+
+```bash
+cp .env.example .env
+```
+
+`.env` is gitignored; restart Metro with `--reset-cache` after changing it, since
+the values are inlined at bundle time.
 
 iOS needs the Pods step as well:
 
@@ -220,14 +245,21 @@ down from a 211MB universal APK.
 
 Pushing a `v*` tag runs [`.github/workflows/release.yml`](.github/workflows/release.yml),
 which calls the `github` lane to build both APKs and attach them to a GitHub
-Release. It needs three repository secrets, and fails fast if the first is
-missing rather than publishing a debug-signed build:
+Release. It needs five repository secrets, and fails fast if any is missing
+rather than publishing a debug-signed or backend-less build:
 
 | Secret | Value |
 |---|---|
 | `TALLY_KEYSTORE_BASE64` | `base64 -w0 tally-release.jks` |
 | `TALLY_STORE_PASSWORD` | keystore password |
 | `TALLY_KEY_PASSWORD` | key password |
+| `TALLY_SUPABASE_URL` | same value as `SUPABASE_URL` in your local `.env` |
+| `TALLY_SUPABASE_ANON_KEY` | same value as `SUPABASE_ANON_KEY` in your local `.env` |
+
+The workflow writes the last two into a `.env` file before the build, since
+`react-native-dotenv` inlines them into the JS bundle at bundle time (see
+[Installation](#installation)) — without them the release APK would build fine
+and only fail at sign-in.
 
 The key alias is not a secret — it comes from
 [`fastlane/.env.default`](fastlane/.env.default). Change it there if your
@@ -251,7 +283,7 @@ a binary committed once stays in the history for every future clone.
 | `VIBRATE` | Android | Haptic alert when people are detected |
 | `READ_MEDIA_IMAGES` (API 33+) / `READ_EXTERNAL_STORAGE` (≤ 32) / `NSPhotoLibraryUsageDescription` | Android, iOS | Listing library photos so one can be picked and scanned |
 | `WRITE_EXTERNAL_STORAGE` | Android ≤ 28 | Saving the annotated image; from API 29 MediaStore handles it, so it is only requested on older devices |
-| `INTERNET` | Android | Metro dev server in debug builds |
+| `INTERNET` | Android | Metro dev server in debug builds, plus Supabase auth and history sync in every build |
 
 ## How it works
 
@@ -334,6 +366,77 @@ asserting the two agree.
 Model details, the specs verified on a real device, and what must be re-checked
 when swapping models: [assets/models/README.md](assets/models/README.md).
 
+## Localisation
+
+Copy lives in [`src/i18n`](src/i18n), running on [`i18n-js`](https://github.com/fnando/i18n-js).
+Vietnamese is the default and English the fallback; the device locale is read
+once at module load through `Intl`, with a hardcoded fallback because Intl is
+compiled out of some Hermes builds.
+
+`t()` is a typed wrapper rather than `i18n.t` directly, and the signature is the
+reason it exists:
+
+```ts
+import { t } from '../i18n';
+
+t('close');                        // ✓
+t('zoomTimes', { count: 3 });      // ✓
+t('zoomTimes');                    // ✗ Expected 2 arguments, but got 1
+t('close', { count: 3 });          // ✗ Expected 1 arguments, but got 2
+t('notAKey');                      // ✗ not assignable to parameter of type ...
+```
+
+Two things back that up. [`vi.ts`](src/i18n/vi.ts) is the source of truth for
+both the copy and the shape, so [`en.ts`](src/i18n/en.ts) — typed as
+`InflectedCatalog` — fails the build the moment a key is added without a
+translation. And the `Params` interface beside the catalog declares the
+arguments each interpolating key takes.
+
+`Params` and the `%{name}` placeholders in the strings have to agree by hand,
+which the type system cannot check — so
+[`__tests__/i18n.test.js`](__tests__/i18n.test.js) does: it asserts every
+argument actually lands in the output, that no `%{…}` or `${…}` marker survives,
+and that both catalogs use the same placeholders per key. A `${count}` written
+where `%{count}` was meant is invisible to `tsc` and ships a broken sentence.
+
+Adding a language: write the catalog typed as `InflectedCatalog`, register it
+in the `I18n` constructor, and widen `Locale` plus `detectLocale()` in
+[`index.ts`](src/i18n/index.ts).
+
+### Pluralisation
+
+Vietnamese does not inflect nouns for number — "3 người" and "1 người" are the
+same word — so every value in [`vi.ts`](src/i18n/vi.ts) is a single string, on
+purpose. English does inflect, so `PLURAL_KEYS` in `vi.ts` names the dozen keys
+whose English wording changes with the count beside it (`people`/`person`,
+`classCount`, `sumPhotos`, …); `InflectedCatalog` requires exactly those keys to
+carry `{ one, other }` forms in [`en.ts`](src/i18n/en.ts) and every other key to
+stay a plain string, so putting forms on the wrong key — or a bare string on a
+`PLURAL_KEYS` one — fails the build.
+
+`i18n-js` selects the form from a `count` option and then interpolates as
+usual, so `Params` requires `{ count: number }` for exactly the keys in
+`PLURAL_KEYS` — a plural key called with `n` or `z` instead would silently skip
+pluralisation and hand React the raw `{ one, other }` object, so `Params`
+extends `Record<PluralKey, { count: number }>` to make that a type error too.
+
+`batchTotal` ("3 people, 11 objects in total") has two counts in one sentence,
+which a single `count` option cannot pluralise at once — so it takes two
+already-pluralised strings (`peopleCount`/`objectCount`, rendered first) rather
+than two numbers.
+
+Detected object names inflect the same way, but only where a name sits inside a
+counted sentence: [`labelForCount()`](src/shared/labels.ts) is what
+`HistorySheet`'s scan breakdown ("3 people, 2 boats") calls, handling COCO's one
+true irregular (`person` → `people`) plus five nouns a suffix rule gets wrong
+(`sheep`, `skis`, `scissors`, `knife`, `mouse`) by exception, and the regular
+suffix rule for the rest. Every other caller of `label()` shows a class name
+beside its own count badge rather than inside a sentence, where the singular
+form reads fine regardless of the number — so `label()` itself stays
+uninflected, and `export.ts`'s CSV deliberately keeps the singular class name
+too: pluralising it would split "boat" and "boats" into different groups in a
+pivot table.
+
 ## Testing
 
 ```bash
@@ -359,6 +462,13 @@ quietly wrong results:
   `a * 84 + c`): transpose those and boxes still appear, just in the wrong places.
   An end2end export hands back `[1, 300, 6]` instead — a completely different
   shape that fails silently
+- [`__tests__/i18n.test.js`](__tests__/i18n.test.js) — the half of the
+  translation contract `tsc` cannot see: placeholders resolving, `count: 1` vs.
+  `count: 3` actually producing different English, `PLURAL_KEYS` matching
+  exactly the keys with `{ one, other }` forms, and the two catalogs agreeing
+  key for key and placeholder for placeholder. Nothing here asserts Vietnamese
+  or English text, since the active locale depends on where the suite runs —
+  jest resolves to `en`
 
 Linting:
 
@@ -379,6 +489,16 @@ ObjectDetector/
       detections.ts    #   Detection type, IoU, NMS merge
       labels.ts        #   The 80 COCO labels + Vietnamese translations
       theme.ts         #   Colours, fonts, radii, easing curves
+      history.ts       #   ScanRecord, day grouping, local JSON (de)serialisation
+      thumbnail.ts     #   Encoding a scan's thumbnail/preview JPEGs
+      export.ts        #   Sharing/exporting a saved scan
+      supabase.ts      #   Supabase client (AsyncStorage-backed session), getUserId()
+      cloudSync.ts     #   Uploads/downloads scans, thumbnails and previews to Supabase
+      authErrors.ts    #   Supabase auth errors → translated copy; email/password checks
+    i18n/              # All UI copy. See "Localisation" below
+      vi.ts            #   Vietnamese catalog (source of truth) + the Params contract
+      en.ts            #   English catalog, typed against vi
+      index.ts         #   i18n-js instance, locale detection, the typed t()
     detection/         # The model pipeline, orchestrated only by DetectorScreen
       annotate.ts      #   Burn boxes into the photo at save time (offscreen Skia)
       classify.ts      #   Second-stage: crop a box, name it from 1000 ImageNet classes
@@ -386,13 +506,18 @@ ObjectDetector/
       modelInput.ts    #   Shared pixel-building for both TFLite models (NCHW)
       runModel.ts      #   Model output parsing, shared by the camera and photo paths
       scanImage.ts     #   Scan a library photo: Skia-built model input, both passes
-    components/        # HUD: detection boxes, class filter, photo picker, glass surfaces, buttons, threshold slider, detail sheet
-    hooks/             # useAlert (haptics), useSavePhoto (save to photo library)
-    screens/           # DetectorScreen: camera, scan worklet, the whole HUD
+    components/        # One file per component. HUD (detection boxes, class filter,
+                       #   photo picker, threshold slider, detail/history sheets) plus the
+                       #   shared primitives: GlassSurface, CtaButton, SegmentedTabs,
+                       #   FormField, AmbientBackdrop, IconButton, icons
+    hooks/             # useAuth (Supabase session), useScanHistory (local + cloud history),
+                       #   useCameraControls, useClassFilter, useRefinedLabel,
+                       #   useAlert (haptics), useSavePhoto, useEnter (entry animation)
+    screens/           # AuthScreen (sign in/register), DetectorScreen (camera, scan worklet, the whole HUD)
   assets/
     fonts/             # Geist (SIL OFL), linked with react-native-asset
     models/            # yolo26n.tflite + notes on its verified tensor layout
-  __tests__/           # Box coordinate tests
+  __tests__/           # Box coordinate tests + the i18n catalog contract
   patches/             # patch-package patch for react-native-fast-tflite
   android/             # Android project (bare workflow)
   ios/                 # iOS project + Podfile
@@ -472,3 +597,6 @@ ObjectDetector/
 | [`@react-native-camera-roll/camera-roll`](https://github.com/react-native-cameraroll/react-native-cameraroll) | Saving the image to the photo library |
 | [`react-native-reanimated`](https://github.com/software-mansion/react-native-reanimated) | HUD and shutter animations |
 | [`@react-native-community/blur`](https://github.com/Kureev/react-native-blur) | Frosted-glass backgrounds for the HUD cards |
+| [`@supabase/supabase-js`](https://github.com/supabase/supabase-js) | Auth (email/password) and the Postgres/storage backend for history sync |
+| [`@react-native-async-storage/async-storage`](https://github.com/react-native-async-storage/async-storage) | Local history/preview cache, and the session store `supabase-js` persists into |
+| [`i18n-js`](https://github.com/fnando/i18n-js) | Translation lookup, interpolation and locale fallback — see [Localisation](#localisation) |

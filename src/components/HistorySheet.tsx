@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Modal,
   Pressable,
@@ -24,9 +25,10 @@ import {
   totalOf,
   type ScanRecord,
 } from '../shared/history';
-import { label } from '../shared/labels';
-import { t } from '../shared/strings';
+import { labelForCount } from '../shared/labels';
+import { t } from '../i18n';
 import { toCsv } from '../shared/export';
+import { useAuth } from '../hooks/useAuth';
 import { Checkbox } from './Checkbox';
 
 // Views, not the Skia <Icon>: a Skia Canvas draws nothing inside an RN Modal
@@ -143,6 +145,55 @@ function ListCheckIcon({ size = 20 }: { size?: number }) {
 }
 
 /**
+ * A head-and-shoulders silhouette in a circular badge - the sign-out button.
+ * The shoulders are a wider circle whose top half pokes above the badge on
+ * purpose; clipping the badge with `overflow: hidden` keeps only the rounded
+ * top edge, which is what makes it read as shoulders instead of a second head.
+ */
+function AccountIcon({
+  size = 20,
+  signedIn,
+}: {
+  size?: number;
+  signedIn: boolean;
+}) {
+  const color = signedIn ? COLORS.accent : COLORS.textPrimary;
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        overflow: 'hidden',
+      }}
+    >
+      <View
+        style={{
+          position: 'absolute',
+          left: size * 0.32,
+          top: size * 0.14,
+          width: size * 0.36,
+          height: size * 0.36,
+          borderRadius: size * 0.18,
+          backgroundColor: color,
+        }}
+      />
+      <View
+        style={{
+          position: 'absolute',
+          left: size * 0.06,
+          top: size * 0.56,
+          width: size * 0.88,
+          height: size * 0.88,
+          borderRadius: size * 0.44,
+          backgroundColor: color,
+        }}
+      />
+    </View>
+  );
+}
+
+/**
  * How long a row takes to fade before it is actually dropped.
  *
  * Fade first, delete second - the row animates while still mounted and still
@@ -164,9 +215,9 @@ const FADE_MS = 200;
 
 /** "3 người, 2 thuyền, 1 ghế" - the classes that were actually found. */
 function breakdown(record: ScanRecord): string {
-  if (record.counts.length === 0) return t.nothingFound;
+  if (record.counts.length === 0) return t('nothingFound');
   return record.counts
-    .map(c => t.countOf(c.count, label(c.classId)))
+    .map(c => t('countOf', { count: c.count, name: labelForCount(c.classId, c.count) }))
     .join(', ');
 }
 
@@ -205,7 +256,7 @@ function Row({
       accessibilityRole={selecting ? 'checkbox' : 'button'}
       accessibilityState={selecting ? { checked: selected } : undefined}
       accessibilityLabel={
-        selecting ? (selected ? t.deselectRow : t.selectRow) : t.openScan
+        selecting ? (selected ? t('deselectRow') : t('selectRow')) : t('openScan')
       }
       onPress={selecting ? onToggle : onOpen}
       // Long press is how a list like this is normally put into selection mode,
@@ -233,7 +284,7 @@ function Row({
       ) : (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={t.removeScan}
+          accessibilityLabel={t('removeScan')}
           hitSlop={12}
           onPress={onRemove}
         >
@@ -299,7 +350,7 @@ function Viewer({
         <Text style={styles.title}>{clockTime(record.at)}</Text>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={t.close}
+          accessibilityLabel={t('close')}
           hitSlop={16}
           onPress={onClose}
         >
@@ -311,7 +362,7 @@ function Viewer({
         {loading ? (
           <ActivityIndicator color={COLORS.accent} />
         ) : source == null ? (
-          <Text style={styles.message}>{t.noPreview}</Text>
+          <Text style={styles.message}>{t('noPreview')}</Text>
         ) : (
           <>
             <Image
@@ -325,7 +376,7 @@ function Viewer({
               resizeMode="contain"
             />
             {preview == null && (
-              <Text style={styles.viewerNote}>{t.noPreview}</Text>
+              <Text style={styles.viewerNote}>{t('noPreview')}</Text>
             )}
           </>
         )}
@@ -333,7 +384,10 @@ function Viewer({
 
       <View style={[styles.viewerFoot, { paddingBottom: insets.bottom + 20 }]}>
         <Text style={styles.viewerTotals}>
-          {t.batchTotal(record.people, record.total)}
+          {t('batchTotal', {
+            people: t('peopleCount', { count: record.people }),
+            total: t('objectCount', { count: record.total }),
+          })}
         </Text>
         {/* Not clamped to two lines like the row: this is the screen you open
             precisely because the row was too short to list everything. */}
@@ -367,6 +421,20 @@ export function HistorySheet({
   onClose: () => void;
 }) {
   const insets = useSafeAreaInsets();
+  const { email, signOut } = useAuth();
+
+  // Signing in lives on its own AuthScreen now, shown before the app is even
+  // reachable - so by the time this sheet exists there is always a real
+  // account. The only account action left in here is signing out, which
+  // needs no form: a confirm and one call.
+  const confirmSignOut = React.useCallback(() => {
+    if (email == null) return;
+    Alert.alert(t('signOutConfirmTitle'), t('signOutConfirmBody', { email }), [
+      { text: t('cancelSelect'), style: 'cancel' },
+      { text: t('signOut'), style: 'destructive', onPress: () => signOut() },
+    ]);
+  }, [email, signOut]);
+
   const [now] = React.useState(() => Date.now());
   const sections = React.useMemo(() => groupByDay(records, now), [records, now]);
 
@@ -443,7 +511,7 @@ export function HistorySheet({
   // Writing a .csv would mean a filesystem dependency and a FileProvider to
   // hand the URI across the process boundary, for the same text.
   const shareCsv = React.useCallback(() => {
-    Share.share({ message: toCsv(records), title: t.shareSubject }).catch(e =>
+    Share.share({ message: toCsv(records), title: t('shareSubject') }).catch(e =>
       console.warn('[HistorySheet] could not share the history', e),
     );
   }, [records]);
@@ -456,34 +524,40 @@ export function HistorySheet({
       // Back unwinds in the order things were opened: the viewer, then
       // selection mode, then the sheet itself.
       onRequestClose={
-        open != null
-          ? () => setOpenId(null)
-          : selecting
-          ? endSelect
-          : onClose
+        open != null ? () => setOpenId(null) : selecting ? endSelect : onClose
       }
     >
       <View style={[styles.root, { paddingTop: insets.top }]}>
         <View style={styles.header}>
-          <Text style={styles.title}>{t.historyTitle}</Text>
+          <Text style={styles.title}>{t('historyTitle')}</Text>
 
           <View style={styles.headerActions}>
             {selecting && (
               <Pressable
                 accessibilityRole="checkbox"
                 accessibilityState={{ checked: allSelected }}
-                accessibilityLabel={allSelected ? t.deselectAll : t.selectAll}
+                accessibilityLabel={allSelected ? t('deselectAll') : t('selectAll')}
                 hitSlop={12}
                 onPress={toggleAll}
               >
                 <Checkbox selected={allSelected} size={20} />
               </Pressable>
             )}
+            {!selecting && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t('signOut')}
+                hitSlop={12}
+                onPress={confirmSignOut}
+              >
+                <AccountIcon size={20} signedIn={email != null} />
+              </Pressable>
+            )}
             {records.length > 0 && !selecting && (
               <>
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel={t.shareHistory}
+                  accessibilityLabel={t('shareHistory')}
                   hitSlop={12}
                   onPress={shareCsv}
                 >
@@ -491,7 +565,7 @@ export function HistorySheet({
                 </Pressable>
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel={t.selectScans}
+                  accessibilityLabel={t('selectScans')}
                   hitSlop={12}
                   onPress={() => setSelecting(true)}
                 >
@@ -501,7 +575,7 @@ export function HistorySheet({
             )}
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={t.close}
+              accessibilityLabel={t('close')}
               hitSlop={16}
               onPress={onClose}
             >
@@ -512,7 +586,7 @@ export function HistorySheet({
 
         {records.length === 0 ? (
           <View style={styles.center}>
-            <Text style={styles.message}>{t.historyEmpty}</Text>
+            <Text style={styles.message}>{t('historyEmpty')}</Text>
           </View>
         ) : (
           <SectionList
@@ -532,10 +606,13 @@ export function HistorySheet({
               summary != null && summary.photos > 1 ? (
                 <View style={styles.summary}>
                   <Text style={styles.summaryTitle}>
-                    {t.batchTitle(summary.photos)}
+                    {t('batchTitle', { count: summary.photos })}
                   </Text>
                   <Text style={styles.summaryLine}>
-                    {t.batchTotal(summary.people, summary.total)}
+                    {t('batchTotal', {
+                      people: t('peopleCount', { count: summary.people }),
+                      total: t('objectCount', { count: summary.total }),
+                    })}
                   </Text>
                 </View>
               ) : null
@@ -565,7 +642,7 @@ export function HistorySheet({
               onPress={removeSelected}
             >
               <Text style={styles.dangerText}>
-                {t.deleteSelected(selected.size)}
+                {t('deleteSelected', { n: selected.size })}
               </Text>
             </Pressable>
             <Pressable
@@ -573,7 +650,7 @@ export function HistorySheet({
               accessibilityRole="button"
               onPress={endSelect}
             >
-              <Text style={styles.clearText}>{t.cancelSelect}</Text>
+              <Text style={styles.clearText}>{t('cancelSelect')}</Text>
             </Pressable>
           </View>
         )}

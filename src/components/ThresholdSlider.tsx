@@ -8,7 +8,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { COLORS, EASE_OUT_EXPO, FONT } from '../shared/theme';
-import { t } from '../shared/strings';
+import { t } from '../i18n';
 import { Icon } from './icons';
 
 const TRACK_W = 104;
@@ -99,13 +99,13 @@ export function ThresholdSlider({ value, onChange }: Props) {
       style={styles.wrap}
       accessible
       accessibilityRole="adjustable"
-      accessibilityLabel={t.thresholdLabel}
-      accessibilityHint={t.thresholdHint}
+      accessibilityLabel={t('thresholdLabel')}
+      accessibilityHint={t('thresholdHint')}
       accessibilityValue={{
         min: Math.round(MIN * 100),
         max: Math.round(MAX * 100),
         now: Math.round(value * 100),
-        text: t.percent(Math.round(value * 100)),
+        text: t('percent', { n: Math.round(value * 100) }),
       }}
       onAccessibilityAction={e => {
         if (e.nativeEvent.actionName === 'increment') step(0.05);

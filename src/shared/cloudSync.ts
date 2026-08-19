@@ -1,6 +1,6 @@
 import { decode } from 'base64-arraybuffer';
 
-import { ensureUserId, supabase } from './supabase';
+import { getUserId, supabase } from './supabase';
 import type { ScanRecord } from './history';
 
 const BUCKET = 'scans';
@@ -29,7 +29,7 @@ export async function uploadScan(
   record: ScanRecord,
   thumbnail: string,
 ): Promise<void> {
-  const userId = await ensureUserId();
+  const userId = await getUserId();
   if (userId == null) return;
 
   const { error: insertError } = await supabase.from('scans').insert({
@@ -59,7 +59,7 @@ export async function uploadScan(
 /** Uploads the full-size preview once it exists - see makePreview, it is
  *  encoded after the scan itself already finished saving. */
 export async function uploadPreview(id: string, preview: string): Promise<void> {
-  const userId = await ensureUserId();
+  const userId = await getUserId();
   if (userId == null) return;
 
   const { error } = await supabase.storage
@@ -75,7 +75,7 @@ export async function uploadPreview(id: string, preview: string): Promise<void> 
 /** Deletes rows and both possible images for a batch of scans, best effort. */
 export async function deleteScans(ids: readonly string[]): Promise<void> {
   if (ids.length === 0) return;
-  const userId = await ensureUserId();
+  const userId = await getUserId();
   if (userId == null) return;
 
   const { error: rowError } = await supabase
@@ -113,7 +113,7 @@ export async function deleteScans(ids: readonly string[]): Promise<void> {
  * the very first launch.
  */
 export async function restoreFromCloud(limit: number): Promise<ScanRecord[]> {
-  const userId = await ensureUserId();
+  const userId = await getUserId();
   if (userId == null) return [];
 
   const { data, error } = await supabase
@@ -149,7 +149,7 @@ export async function restoreFromCloud(limit: number): Promise<ScanRecord[]> {
 /** Downloads one scan's preview on demand - the cloud-backed half of
  *  loadPreview, tried only after the local cache misses. */
 export async function downloadPreview(id: string): Promise<string | null> {
-  const userId = await ensureUserId();
+  const userId = await getUserId();
   if (userId == null) return null;
 
   const { data, error } = await supabase.storage

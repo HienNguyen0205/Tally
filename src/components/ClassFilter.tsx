@@ -10,7 +10,7 @@ import Animated, {
 import { COLORS, EASE_OUT_EXPO, FONT } from '../shared/theme';
 import { PERSON_CLASS_ID } from '../shared/constants';
 import { label } from '../shared/labels';
-import { t } from '../shared/strings';
+import { t } from '../i18n';
 import { GlassSurface } from './GlassSurface';
 import { Icon } from './icons';
 
@@ -67,8 +67,8 @@ export function ClassFilter({
   const shown = counts.length - hidden.size;
   const summary =
     hidden.size === 0
-      ? t.classCount(counts.length)
-      : t.classCountPartial(shown, counts.length);
+      ? t('classCount', { count: counts.length })
+      : t('classCountPartial', { shown, count: counts.length });
 
   return (
     <View style={styles.wrap}>
@@ -88,8 +88,8 @@ export function ClassFilter({
                     style={[styles.chip, off && styles.chipOff]}
                     accessibilityRole="switch"
                     accessibilityState={{ checked: !off }}
-                    accessibilityLabel={t.classChip(name, count)}
-                    accessibilityHint={t.classChipHint}
+                    accessibilityLabel={t('classChip', { name, count })}
+                    accessibilityHint={t('classChipHint')}
                     onPress={() => onToggle(classId)}
                   >
                     <View
@@ -119,7 +119,7 @@ export function ClassFilter({
           accessibilityRole="button"
           accessibilityState={{ expanded: open }}
           accessibilityLabel={
-            open ? t.collapseFilter : t.expandFilter
+            open ? t('collapseFilter') : t('expandFilter')
           }
           onPress={() => setOpen(o => !o)}
         >

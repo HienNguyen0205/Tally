@@ -10,7 +10,7 @@ import Animated, {
 
 import { COLORS, EASE_OUT_EXPO, FONT } from '../shared/theme';
 import { COCO_LABELS, label } from '../shared/labels';
-import { t } from '../shared/strings';
+import { t } from '../i18n';
 import { PERSON_CLASS_ID } from '../shared/constants';
 import { GlassSurface } from './GlassSurface';
 
@@ -76,7 +76,7 @@ export function DetailSheet({
                 than COCO's coarse original. */}
           {refining === true ? (
             <Text style={[styles.subtitle, styles.subtitleWaiting]}>
-              {t.identifying}
+              {t('identifying')}
             </Text>
           ) : refined != null ? (
             <Text style={[styles.subtitle, styles.subtitleRefined]}>
@@ -104,7 +104,7 @@ export function DetailSheet({
         <Pressable
           style={styles.close}
           accessibilityRole="button"
-          accessibilityLabel={t.closeDetail}
+          accessibilityLabel={t('closeDetail')}
           hitSlop={12}
           onPress={onClose}
         >

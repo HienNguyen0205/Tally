@@ -8,7 +8,7 @@ const {
   totalOf,
 } = require('../src/shared/history');
 const { PERSON_CLASS_ID } = require('../src/shared/constants');
-const { t } = require('../src/shared/strings');
+const { t } = require('../src/i18n');
 
 const BOAT = 8;
 
@@ -150,7 +150,7 @@ describe('groupByDay', () => {
       now,
     );
 
-    expect(sections.map(s => s.title)).toEqual([t.today, t.yesterday, '15/8/2026']);
+    expect(sections.map(s => s.title)).toEqual([t('today'), t('yesterday'), '15/8/2026']);
   });
 
   it('keeps several scans from one day in one section', () => {
@@ -167,7 +167,7 @@ describe('groupByDay', () => {
     // 23:30 local is already the next UTC day east of Greenwich. Dividing the
     // timestamp by 86400000 would file this under tomorrow.
     const sections = groupByDay([rec('a', ts(2026, 8, 18, 23, 30))], now);
-    expect(sections[0].title).toBe(t.today);
+    expect(sections[0].title).toBe(t('today'));
   });
 
   it('returns nothing for an empty history', () => {

@@ -51,6 +51,21 @@ const PATHS = {
   ),
   // Cross - dismiss a row or close a panel
   close: makePath('M6 6 L18 18 M18 6 L6 18'),
+  // Open eye - password is showing
+  eye: makePath(
+    'M2 12 C4.8 7.4 8.3 5 12 5 C15.7 5 19.2 7.4 22 12 ' +
+      'C19.2 16.6 15.7 19 12 19 C8.3 19 4.8 16.6 2 12 Z ' +
+      'M12 9 A3 3 0 1 0 12 15 A3 3 0 1 0 12 9',
+  ),
+  // Struck-through eye - password is hidden. The two arcs stop short of the
+  // slash rather than running under it, so the cut reads as a gap, not an
+  // overlap.
+  eyeOff: makePath(
+    'M10.7 6.2 A9.4 9.4 0 0 1 12 6.1 C15.7 6.1 19.2 8.5 22 12 ' +
+      'A18.6 18.6 0 0 1 18.9 15.3 M14.8 16.6 A9.6 9.6 0 0 1 12 17.9 ' +
+      'C8.3 17.9 4.8 15.5 2 12 A18.4 18.4 0 0 1 5.6 8.2 ' +
+      'M9.9 9.9 A3 3 0 0 0 14.1 14.1 M4 4 L20 20',
+  ),
 };
 
 export type IconName = keyof typeof PATHS;

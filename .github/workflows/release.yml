@@ -18,9 +18,15 @@ jobs:
       - name: Require signing secrets
         env:
           KEYSTORE: ${{ secrets.TALLY_KEYSTORE_BASE64 }}
+          SUPABASE_URL: ${{ secrets.TALLY_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.TALLY_SUPABASE_ANON_KEY }}
         run: |
           if [ -z "$KEYSTORE" ]; then
             echo "::error::TALLY_KEYSTORE_BASE64 is not set - refusing to publish a debug-signed APK."
+            exit 1
+          fi
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "::error::TALLY_SUPABASE_URL/TALLY_SUPABASE_ANON_KEY are not set - refusing to publish a build with no backend."
             exit 1
           fi
 
@@ -44,6 +50,18 @@ jobs:
           bundler-cache: true
 
       - run: npm ci
+
+      # react-native-dotenv inlines these into the JS bundle at build time
+      # (see src/shared/supabase.ts). .env is gitignored, so without this the
+      # release build would silently bundle `undefined` for both - the app
+      # would install fine and break only at sign-in.
+      - name: Write .env
+        env:
+          SUPABASE_URL: ${{ secrets.TALLY_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.TALLY_SUPABASE_ANON_KEY }}
+        run: |
+          echo "SUPABASE_URL=$SUPABASE_URL" >> .env
+          echo "SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY" >> .env
 
       # fastlane's gradle action shells out to ./gradlew itself, so this cannot
       # be worked around in the lane - see the note in ci.yml.

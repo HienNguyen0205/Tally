@@ -9,7 +9,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { COLORS, EASE_OUT_EXPO, FONT } from '../shared/theme';
-import { t } from '../shared/strings';
+import { t } from '../i18n';
 import { GlassSurface } from './GlassSurface';
 
 interface Props {
@@ -78,12 +78,12 @@ export function ResultIsland({
             ]}
           />
           <Text style={styles.count}>{peopleCount}</Text>
-          <Text style={styles.unit}>{t.people}</Text>
+          <Text style={styles.unit}>{t('people', { count: peopleCount })}</Text>
 
           <Animated.View style={[styles.tail, staggerStyle]}>
             <View style={styles.dividerV} />
             <Text style={styles.objects}>{objectCount}</Text>
-            <Text style={styles.unit}>{t.objects}</Text>
+            <Text style={styles.unit}>{t('objects', { count: objectCount })}</Text>
           </Animated.View>
         </GlassSurface>
 
@@ -92,14 +92,16 @@ export function ResultIsland({
             makes it ambiguous which number the big one is. */}
         {session != null && (
           <GlassSurface pill contentStyle={styles.sumPill}>
-            <Text style={styles.sumLabel}>{t.sumTotal}</Text>
+            <Text style={styles.sumLabel}>{t('sumTotal')}</Text>
             <Text style={styles.sumCount}>{session.people}</Text>
-            <Text style={styles.unit}>{t.people}</Text>
+            <Text style={styles.unit}>{t('people', { count: session.people })}</Text>
             <View style={styles.dividerV} />
             <Text style={styles.sumCount}>{session.total}</Text>
-            <Text style={styles.unit}>{t.objects}</Text>
+            <Text style={styles.unit}>{t('objects', { count: session.total })}</Text>
             <View style={styles.dividerV} />
-            <Text style={styles.unit}>{t.sumPhotos(session.photos)}</Text>
+            <Text style={styles.unit}>
+              {t('sumPhotos', { count: session.photos })}
+            </Text>
           </GlassSurface>
         )}
       </Animated.View>

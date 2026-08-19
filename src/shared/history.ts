@@ -1,6 +1,6 @@
 import type { Detection } from './detections';
 import { PERSON_CLASS_ID } from './constants';
-import { t } from './strings';
+import { t } from '../i18n';
 
 export interface ClassCount {
   classId: number;
@@ -129,9 +129,9 @@ export function groupByDay(
       sections.push({
         title:
           day === today
-            ? t.today
+            ? t('today')
             : day === yesterday.getTime()
-            ? t.yesterday
+            ? t('yesterday')
             : `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`,
         data: [],
       });

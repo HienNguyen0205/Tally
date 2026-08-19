@@ -5,6 +5,9 @@
 export const COLORS = {
   accent: '#00E676', // people
   warn: '#FFC400', // other objects
+  /** Ink for anything sitting on top of `accent` - near-black with a green
+   *  cast, so it reads as part of the accent rather than a black sticker. */
+  onAccent: '#04120A',
 
   // Outer shell of the double-bezel construction
   shell: 'rgba(255,255,255,0.07)',
