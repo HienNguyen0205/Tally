@@ -33,6 +33,7 @@ export const en: InflectedCatalog = {
   torchOff: 'Turn the torch off',
   pickFromLibrary: 'Scan a photo from the library',
   openHistory: 'View scan history',
+  openSettings: 'Open settings',
   flipCamera: 'Switch between front and back camera',
   shutter: 'Capture and scan',
   tapToFocus: 'Tap the viewfinder to focus',
@@ -106,7 +107,24 @@ export const en: InflectedCatalog = {
   shareHistory: 'Export CSV',
   shareSubject: 'Tally scan history',
 
+  settingsTitle: 'Settings',
+  languageSection: 'LANGUAGE',
+  detectionSection: 'DETECTION',
+  hapticsLabel: 'Vibrate when people are detected',
+  hapticsHint: 'Turn the vibration alert on or off for scans that find people',
+  defaultThresholdLabel: 'Default confidence threshold',
+  defaultThresholdHint:
+    "Used every time the app opens - does not change the scan you're viewing",
+  dataSection: 'DATA',
+  clearHistory: 'Clear scan history',
+  clearHistoryHint: 'Deletes all saved history, including the cloud copy',
+  clearHistoryConfirmTitle: 'Clear all history?',
+  clearHistoryConfirmBody:
+    'Permanently deletes %{count} saved on this device and in the cloud. This cannot be undone.',
+  scanCount: { one: '%{count} scan', other: '%{count} scans' },
+
   authEyebrow: 'ACCOUNT',
+  signedInAs: 'Signed in: %{email}',
   authSubtitle: 'Sign in to start counting',
   emailLabel: 'Email',
   emailHint: 'you@example.com',

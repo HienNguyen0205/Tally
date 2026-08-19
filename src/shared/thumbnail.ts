@@ -44,10 +44,10 @@ export function makeThumbnail(image: SkImage, size = 96): string | null {
  * fill that, which is what read as "vỡ nét" - blocky JPEG compression made
  * worse by the upscale. 1024 covers it without upscaling on most phones.
  * (An earlier version of this comment also worried about a "6MB AsyncStorage
- * default" - that number belongs to React Native's old built-in AsyncStorage,
- * not the SQLite-backed @react-native-async-storage/async-storage this app
- * depends on, which has no such fixed quota. Storage still is not free, so
- * the cap stays a deliberate number rather than the source resolution.)
+ * default" - that number belonged to React Native's old built-in AsyncStorage,
+ * not the MMKV-backed store this app depends on now (see shared/storage.ts),
+ * which has no such fixed quota. Storage still is not free, so the cap stays
+ * a deliberate number rather than the source resolution.)
  *
  * Stored under its own key rather than inside the history list, so loading the
  * list stays cheap and a preview is only read when a row is actually opened.

@@ -34,11 +34,11 @@ import {
 } from 'react-native-fast-tflite';
 import { useResizer } from 'react-native-vision-camera-resizer';
 import { createSynchronizable, scheduleOnRN } from 'react-native-worklets';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
   PERSON_CLASS_ID,
   MODEL_SIZE,
-  SCORE_THRESHOLD,
   NMS_IOU,
 } from '../shared/constants';
 import { boxToScreen, toFrameBox } from '../shared/boxLayout';
@@ -57,6 +57,7 @@ import { useCameraControls } from '../hooks/useCameraControls';
 import { useClassFilter } from '../hooks/useClassFilter';
 import { useRefinedLabel } from '../hooks/useRefinedLabel';
 import { useScanHistory } from '../hooks/useScanHistory';
+import type { useSettings } from '../hooks/useSettings';
 import { ResultIsland } from '../components/ResultIsland';
 import { ScanOverlay } from '../components/ScanOverlay';
 import { GlassSurface } from '../components/GlassSurface';
@@ -72,6 +73,7 @@ import { DetectionBox } from '../components/DetectionBox';
 import { ClassFilter } from '../components/ClassFilter';
 import { HistorySheet } from '../components/HistorySheet';
 import { PhotoPicker, loadImageData } from '../components/PhotoPicker';
+import { SettingsScreen } from './SettingsScreen';
 import { readFrameDetections } from '../detection/runModel';
 import { scanImage } from '../detection/scanImage';
 import { annotate } from '../detection/annotate';
@@ -87,6 +89,12 @@ const pressEase = Easing.bezier(...EASE_OUT_EXPO);
 
 // Familiar zoom steps; any step beyond the device's range is dropped.
 const ZOOM_STEPS = [1, 2, 3, 5];
+
+// IconButton (40) plus the GlassSurface pill's own padding (BEZEL_PAD*2 + the
+// hairline borders) - measured from the identical bottom toolRow pill, which
+// wraps the same IconButtons. Used to keep ResultIsland clear of the header
+// pill above it without either one measuring the other at runtime.
+const HEADER_H = 54;
 
 // GPU delegate: measured on a real device (Tecno LI6, both models float32),
 // Invoke runs clean for detector and classifier alike - "boat" comes back with
@@ -149,8 +157,13 @@ function StateScreen({
   );
 }
 
-export function DetectorScreen() {
+interface Props {
+  settings: ReturnType<typeof useSettings>;
+}
+
+export function DetectorScreen({ settings }: Props) {
   const { hasPermission, requestPermission } = useCameraPermission();
+  const insets = useSafeAreaInsets();
 
   const { width: winW, height: winH } = useWindowDimensions();
   const landscape = winW > winH;
@@ -181,8 +194,12 @@ export function DetectorScreen() {
   // running total lived in the user's head.
   const [session, setSession] = useState<string[] | null>(null);
   // Boxes are drawn over the image, so changing the threshold re-filters
-  // immediately - no need to shoot again.
-  const [threshold, setThreshold] = useState(SCORE_THRESHOLD);
+  // immediately - no need to shoot again. Seeded from Settings rather than the
+  // constant directly: useSettings reads MMKV synchronously, so this initial
+  // value is already the user's saved default, not a placeholder that then
+  // jumps a frame later.
+  const [threshold, setThreshold] = useState(settings.defaultThreshold);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const cam = useCameraControls();
   const { hidden, visible, counts, toggle, reset: resetFilter } =
@@ -246,7 +263,7 @@ export function DetectorScreen() {
     transform: [{ scale: 1 - 0.05 * press.value }],
   }));
 
-  const onAlert = useAlert();
+  const onAlert = useAlert(settings.hapticsEnabled);
 
   // A cell readable and writable from both the JS thread and the worklet thread:
   // the shutter (JS) writes here, the worklet reads it each frame to decide
@@ -532,6 +549,9 @@ export function DetectorScreen() {
   // The toolbar exists in two shapes: camera buttons while composing, the
   // threshold while reviewing. An open detail sheet takes the space outright.
   const showTools = (mode === 'idle' || reviewing) && picked == null;
+  // Below the header pill, with a gap - same number for portrait and
+  // landscape, since the header now sits at the same top-right spot in both.
+  const resultTop = insets.top + 12 + HEADER_H + 10;
 
   return (
     <View style={styles.container}>
@@ -693,10 +713,33 @@ export function DetectorScreen() {
 
       {(result != null || session != null) && (
         <ResultIsland
+          top={resultTop}
           peopleCount={peopleCount}
           objectCount={visible.length}
           session={sessionTotal}
         />
+      )}
+
+      {/* History and Settings: utility actions, not camera adjustments, so
+          they live in their own floating pill up top rather than crowding the
+          bottom toolbar - which stays for controls used while framing a shot. */}
+      {showTools && (
+        <GlassSurface
+          pill
+          style={[styles.header, { top: insets.top + 12 }]}
+          contentStyle={styles.headerRow}
+        >
+          <IconButton
+            name="clock"
+            label={t('openHistory')}
+            onPress={() => setHistoryOpen(true)}
+          />
+          <IconButton
+            name="settings"
+            label={t('openSettings')}
+            onPress={() => setSettingsOpen(true)}
+          />
+        </GlassSurface>
       )}
 
       {showTools && (
@@ -731,11 +774,6 @@ export function DetectorScreen() {
                   name="image"
                   label={t('pickFromLibrary')}
                   onPress={() => setPickerOpen(true)}
-                />
-                <IconButton
-                  name="clock"
-                  label={t('openHistory')}
-                  onPress={() => setHistoryOpen(true)}
                 />
                 <IconButton
                   name="sum"
@@ -850,6 +888,15 @@ export function DetectorScreen() {
           onClose={() => setHistoryOpen(false)}
         />
       )}
+
+      {settingsOpen && (
+        <SettingsScreen
+          settings={settings}
+          historyCount={history.length}
+          onClearHistory={() => removeScans(history.map(r => r.id))}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
     </View>
   );
 }
@@ -894,6 +941,12 @@ const styles = StyleSheet.create({
   // --- CTA --- (the pill itself lives in CtaButton; this is only its place
   // in the status card)
   cta: { alignSelf: 'flex-start', marginTop: 26 },
+
+  // --- Header (History, Settings) --- top-right in both orientations: the
+  // shutter already claims the bottom in portrait and the right edge in
+  // landscape, so top-right is the one corner nothing else uses.
+  header: { position: 'absolute', right: 16 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 2, padding: 1 },
 
   // --- Camera toolbar ---
   tools: { position: 'absolute', alignItems: 'center', gap: 10 },

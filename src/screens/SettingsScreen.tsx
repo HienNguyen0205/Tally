@@ -1,0 +1,264 @@
+import { useCallback, type ReactNode } from 'react';
+import {
+  Alert,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { COLORS, FONT } from '../shared/theme';
+import { locale, setLocale, t, type Locale } from '../i18n';
+import { useAuth } from '../hooks/useAuth';
+import type { useSettings } from '../hooks/useSettings';
+import { SegmentedTabs } from '../components/SegmentedTabs';
+import { ThresholdSlider } from '../components/ThresholdSlider';
+import { CloseIcon } from '../components/modalIcons';
+
+/**
+ * Section label, and the sections themselves - plain tinted panels rather than
+ * GlassSurface's blur: this is a Modal, same as HistorySheet, and Skia is
+ * proven blank inside one on Android (see modalIcons.tsx). Whether BlurView
+ * fares better is untested, so this mirrors HistorySheet's own already-proven
+ * Modal-safe look (a flat translucent tint, no blur) instead of gambling on it.
+ */
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      <View style={styles.card}>{children}</View>
+    </View>
+  );
+}
+
+function Row({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: ReactNode;
+}) {
+  return (
+    <View style={styles.row}>
+      <View style={styles.rowText}>
+        <Text style={styles.rowLabel}>{label}</Text>
+        {hint != null && <Text style={styles.rowHint}>{hint}</Text>}
+      </View>
+      {children}
+    </View>
+  );
+}
+
+interface Props {
+  settings: ReturnType<typeof useSettings>;
+  /** For the clear-history confirmation and its disabled state. */
+  historyCount: number;
+  onClearHistory: () => void;
+  onClose: () => void;
+}
+
+/**
+ * Preferences: language, the haptic alert, the confidence threshold a session
+ * starts with, clearing local history, and signing out. Reached from the
+ * camera screen's header - see DetectorScreen.
+ */
+export function SettingsScreen({
+  settings,
+  historyCount,
+  onClearHistory,
+  onClose,
+}: Props) {
+  const insets = useSafeAreaInsets();
+  const { email, signOut } = useAuth();
+
+  const confirmClearHistory = useCallback(() => {
+    Alert.alert(
+      t('clearHistoryConfirmTitle'),
+      t('clearHistoryConfirmBody', { count: t('scanCount', { count: historyCount }) }),
+      [
+        { text: t('cancelSelect'), style: 'cancel' },
+        { text: t('clearHistory'), style: 'destructive', onPress: onClearHistory },
+      ],
+    );
+  }, [historyCount, onClearHistory]);
+
+  const confirmSignOut = useCallback(() => {
+    if (email == null) return;
+    Alert.alert(t('signOutConfirmTitle'), t('signOutConfirmBody', { email }), [
+      { text: t('cancelSelect'), style: 'cancel' },
+      { text: t('signOut'), style: 'destructive', onPress: () => signOut() },
+    ]);
+  }, [email, signOut]);
+
+  return (
+    <Modal visible animationType="slide" statusBarTranslucent onRequestClose={onClose}>
+      <View style={[styles.root, { paddingTop: insets.top }]}>
+        <View style={styles.header}>
+          <Text style={styles.title}>{t('settingsTitle')}</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('close')}
+            hitSlop={16}
+            onPress={onClose}
+          >
+            <CloseIcon />
+          </Pressable>
+        </View>
+
+        <ScrollView
+          contentContainerStyle={[
+            styles.scroll,
+            { paddingBottom: insets.bottom + 24 },
+          ]}
+        >
+          <Section title={t('languageSection')}>
+            {/* Language names stay in their own language regardless of the
+                active locale - "Tiếng Việt" and "English" are not translated,
+                the same way a language picker never translates its own
+                options anywhere else. */}
+            <SegmentedTabs<Locale>
+              options={[
+                { value: 'vi', label: 'Tiếng Việt' },
+                { value: 'en', label: 'English' },
+              ]}
+              selected={locale}
+              onSelect={setLocale}
+            />
+          </Section>
+
+          <Section title={t('detectionSection')}>
+            <Row label={t('hapticsLabel')} hint={t('hapticsHint')}>
+              <Switch
+                value={settings.hapticsEnabled}
+                onValueChange={v => settings.update({ hapticsEnabled: v })}
+                trackColor={{ true: COLORS.accent }}
+              />
+            </Row>
+            <View style={styles.divider} />
+            <Row label={t('defaultThresholdLabel')} hint={t('defaultThresholdHint')}>
+              <ThresholdSlider
+                showIcon={false}
+                value={settings.defaultThreshold}
+                onChange={v => settings.update({ defaultThreshold: v })}
+              />
+            </Row>
+          </Section>
+
+          <Section title={t('dataSection')}>
+            <Text style={styles.rowHint}>{t('clearHistoryHint')}</Text>
+            <Pressable
+              style={[styles.danger, historyCount === 0 && styles.muted]}
+              accessibilityRole="button"
+              disabled={historyCount === 0}
+              onPress={confirmClearHistory}
+            >
+              <Text
+                style={[styles.dangerText, historyCount === 0 && styles.mutedText]}
+              >
+                {t('clearHistory')}
+              </Text>
+            </Pressable>
+          </Section>
+
+          <Section title={t('authEyebrow')}>
+            {email != null && (
+              <Text style={styles.account}>{t('signedInAs', { email })}</Text>
+            )}
+            <Pressable
+              style={styles.danger}
+              accessibilityRole="button"
+              onPress={confirmSignOut}
+            >
+              <Text style={styles.dangerText}>{t('signOut')}</Text>
+            </Pressable>
+          </Section>
+        </ScrollView>
+      </View>
+    </Modal>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: '#050505' },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+  },
+  title: {
+    color: COLORS.textPrimary,
+    fontFamily: FONT.semibold,
+    fontSize: 17,
+    letterSpacing: -0.3,
+  },
+  scroll: { paddingHorizontal: 16, gap: 22 },
+
+  section: { gap: 10 },
+  sectionTitle: {
+    color: COLORS.textFaint,
+    fontFamily: FONT.semibold,
+    fontSize: 11,
+    letterSpacing: 2,
+    marginLeft: 4,
+  },
+  card: {
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.hairline,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    padding: 14,
+    gap: 14,
+  },
+
+  row: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  rowText: { flex: 1, gap: 3 },
+  rowLabel: {
+    color: COLORS.textPrimary,
+    fontFamily: FONT.medium,
+    fontSize: 14,
+  },
+  rowHint: {
+    color: COLORS.textFaint,
+    fontFamily: FONT.regular,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: COLORS.hairline,
+  },
+
+  account: {
+    color: COLORS.textMuted,
+    fontFamily: FONT.medium,
+    fontSize: 13,
+  },
+  danger: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    paddingVertical: 11,
+    paddingHorizontal: 26,
+    backgroundColor: '#FF453A',
+  },
+  dangerText: {
+    color: '#FFFFFF',
+    fontFamily: FONT.semibold,
+    fontSize: 13,
+  },
+  muted: { backgroundColor: 'rgba(255,255,255,0.08)' },
+  mutedText: { color: COLORS.textFaint },
+});

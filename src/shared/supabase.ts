@@ -1,6 +1,7 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from '@env';
+
+import { asyncStorage } from './storage';
 
 // Public by design, not a secret to hide: Supabase's anon key only ever grants
 // what Row Level Security lets it grant. Every table and bucket this app
@@ -10,7 +11,10 @@ import { SUPABASE_ANON_KEY, SUPABASE_URL } from '@env';
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
-    storage: AsyncStorage,
+    // gotrue calls this through the async getItem/setItem/removeItem shape
+    // regardless of what actually backs it - asyncStorage wraps MMKV's
+    // synchronous calls to satisfy that, see shared/storage.ts.
+    storage: asyncStorage,
     autoRefreshToken: true,
     persistSession: true,
     // There is no browser URL to parse on React Native, and leaving this on

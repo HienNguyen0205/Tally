@@ -22,8 +22,8 @@ function objectPath(userId: string, id: string, kind: 'thumb' | 'preview') {
  * Fire-and-forget from the caller's side - scanning has to work with no
  * signal, so this never blocks or throws into the UI. A failed upload here
  * just means that scan is missing from the cloud copy until the next
- * successful sync; the local AsyncStorage copy the app actually reads from
- * is unaffected either way.
+ * successful sync; the local MMKV copy the app actually reads from is
+ * unaffected either way.
  */
 export async function uploadScan(
   record: ScanRecord,
@@ -102,8 +102,8 @@ export async function deleteScans(ids: readonly string[]): Promise<void> {
 }
 
 /**
- * Rebuilds a history from the cloud after a reinstall finds AsyncStorage
- * empty. Only thumbnails come down, not previews - previews stay lazily
+ * Rebuilds a history from the cloud after a reinstall finds MMKV empty. Only
+ * thumbnails come down, not previews - previews stay lazily
  * fetched on open exactly as they are for local history (see loadPreview in
  * useScanHistory.ts), so a restore does not pay for images nobody has asked
  * to see yet.

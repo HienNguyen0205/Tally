@@ -1,7 +1,6 @@
-import React from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Modal,
   Pressable,
@@ -28,13 +27,15 @@ import {
 import { labelForCount } from '../shared/labels';
 import { t } from '../i18n';
 import { toCsv } from '../shared/export';
-import { useAuth } from '../hooks/useAuth';
+import { CloseIcon } from './modalIcons';
 import { Checkbox } from './Checkbox';
 
 // Views, not the Skia <Icon>: a Skia Canvas draws nothing inside an RN Modal
 // on Android, because the Modal gets its own window and surface. Every icon in
 // here would silently render blank - which is exactly what happened the first
-// time. PhotoPicker, also a Modal, already uses the same approach.
+// time. PhotoPicker, also a Modal, already uses the same approach. CloseIcon
+// itself now lives in modalIcons.tsx, shared with SettingsScreen; the two
+// below are only used here.
 //
 // They used to be Text glyphs instead ('↓', '☑', '✕') - simpler, but each one
 // is a different font falling back in a different way on a different device,
@@ -42,34 +43,6 @@ import { Checkbox } from './Checkbox';
 // hand-drawn ring. Redrawing them from the same bars-and-circles technique as
 // Checkbox gives every header icon the exact same box to sit in, so a flex
 // row centres them all on the same line for real instead of by font luck.
-
-/** A centred X, two crossed bars - replaces the header's old '✕' glyph. */
-function CloseIcon({
-  size = 20,
-  color = COLORS.textMuted,
-}: {
-  size?: number;
-  color?: string;
-}) {
-  const stroke = Math.max(1.6, size * 0.1);
-  const len = size * 0.6;
-  const bar = (deg: number) => ({
-    position: 'absolute' as const,
-    width: len,
-    height: stroke,
-    borderRadius: stroke / 2,
-    backgroundColor: color,
-    left: size / 2 - len / 2,
-    top: size / 2 - stroke / 2,
-    transform: [{ rotate: `${deg}deg` }],
-  });
-  return (
-    <View style={{ width: size, height: size }}>
-      <View style={bar(45)} />
-      <View style={bar(-45)} />
-    </View>
-  );
-}
 
 /**
  * A cloud, for exporting the history as CSV. Three overlapping circles plus a
@@ -145,55 +118,6 @@ function ListCheckIcon({ size = 20 }: { size?: number }) {
 }
 
 /**
- * A head-and-shoulders silhouette in a circular badge - the sign-out button.
- * The shoulders are a wider circle whose top half pokes above the badge on
- * purpose; clipping the badge with `overflow: hidden` keeps only the rounded
- * top edge, which is what makes it read as shoulders instead of a second head.
- */
-function AccountIcon({
-  size = 20,
-  signedIn,
-}: {
-  size?: number;
-  signedIn: boolean;
-}) {
-  const color = signedIn ? COLORS.accent : COLORS.textPrimary;
-  return (
-    <View
-      style={{
-        width: size,
-        height: size,
-        borderRadius: size / 2,
-        overflow: 'hidden',
-      }}
-    >
-      <View
-        style={{
-          position: 'absolute',
-          left: size * 0.32,
-          top: size * 0.14,
-          width: size * 0.36,
-          height: size * 0.36,
-          borderRadius: size * 0.18,
-          backgroundColor: color,
-        }}
-      />
-      <View
-        style={{
-          position: 'absolute',
-          left: size * 0.06,
-          top: size * 0.56,
-          width: size * 0.88,
-          height: size * 0.88,
-          borderRadius: size * 0.44,
-          backgroundColor: color,
-        }}
-      />
-    </View>
-  );
-}
-
-/**
  * How long a row takes to fade before it is actually dropped.
  *
  * Fade first, delete second - the row animates while still mounted and still
@@ -240,7 +164,7 @@ function Row({
   onRemove: () => void;
 }) {
   const fade = useSharedValue(1);
-  React.useEffect(() => {
+  useEffect(() => {
     fade.value = withTiming(dying ? 0 : 1, { duration: FADE_MS });
   }, [dying, fade]);
 
@@ -320,10 +244,10 @@ function Viewer({
   onClose: () => void;
 }) {
   const insets = useSafeAreaInsets();
-  const [preview, setPreview] = React.useState<string | null>(null);
-  const [loading, setLoading] = React.useState(true);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  React.useEffect(() => {
+  useEffect(() => {
     let cancelled = false;
     loadPreview(record.id)
       .then(data => {
@@ -421,43 +345,30 @@ export function HistorySheet({
   onClose: () => void;
 }) {
   const insets = useSafeAreaInsets();
-  const { email, signOut } = useAuth();
 
-  // Signing in lives on its own AuthScreen now, shown before the app is even
-  // reachable - so by the time this sheet exists there is always a real
-  // account. The only account action left in here is signing out, which
-  // needs no form: a confirm and one call.
-  const confirmSignOut = React.useCallback(() => {
-    if (email == null) return;
-    Alert.alert(t('signOutConfirmTitle'), t('signOutConfirmBody', { email }), [
-      { text: t('cancelSelect'), style: 'cancel' },
-      { text: t('signOut'), style: 'destructive', onPress: () => signOut() },
-    ]);
-  }, [email, signOut]);
-
-  const [now] = React.useState(() => Date.now());
-  const sections = React.useMemo(() => groupByDay(records, now), [records, now]);
+  const [now] = useState(() => Date.now());
+  const sections = useMemo(() => groupByDay(records, now), [records, now]);
 
   // The id, not the record: deleting the open scan from underneath should shut
   // the viewer rather than leave a stale copy on screen.
-  const [openId, setOpenId] = React.useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
   const open = records.find(r => r.id === openId) ?? null;
 
-  const [selecting, setSelecting] = React.useState(false);
-  const [selected, setSelected] = React.useState<ReadonlySet<string>>(new Set());
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
 
   // Rows fading out. They are still in `records` - the real removal happens one
   // FADE_MS later, so the list does not close the gap while the fade is running.
-  const [dying, setDying] = React.useState<ReadonlySet<string>>(new Set());
-  const timers = React.useRef<ReturnType<typeof setTimeout>[]>([]);
-  React.useEffect(
+  const [dying, setDying] = useState<ReadonlySet<string>>(new Set());
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  useEffect(
     () => () => {
       timers.current.forEach(clearTimeout);
     },
     [],
   );
 
-  const requestRemove = React.useCallback(
+  const requestRemove = useCallback(
     (ids: readonly string[]) => {
       setDying(new Set(ids));
       timers.current.push(
@@ -470,14 +381,14 @@ export function HistorySheet({
     [onRemoveMany],
   );
 
-  const endSelect = React.useCallback(() => {
+  const endSelect = useCallback(() => {
     setSelecting(false);
     setSelected(new Set());
   }, []);
 
   // Toggling also enters selection mode, so a long press on a row starts it
   // without a trip to the header.
-  const toggle = React.useCallback((id: string) => {
+  const toggle = useCallback((id: string) => {
     setSelecting(true);
     setSelected(prev => {
       const next = new Set(prev);
@@ -490,13 +401,13 @@ export function HistorySheet({
   // Against `records`, not a counter: a row that fades out while the sheet is
   // open changes what "all" means.
   const allSelected = records.length > 0 && selected.size === records.length;
-  const toggleAll = React.useCallback(() => {
+  const toggleAll = useCallback(() => {
     setSelected(prev =>
       prev.size === records.length ? new Set() : new Set(records.map(r => r.id)),
     );
   }, [records]);
 
-  const removeSelected = React.useCallback(() => {
+  const removeSelected = useCallback(() => {
     requestRemove([...selected]);
     endSelect();
   }, [requestRemove, selected, endSelect]);
@@ -510,7 +421,7 @@ export function HistorySheet({
   // pasted into a spreadsheet or a chat is what people actually do with it.
   // Writing a .csv would mean a filesystem dependency and a FileProvider to
   // hand the URI across the process boundary, for the same text.
-  const shareCsv = React.useCallback(() => {
+  const shareCsv = useCallback(() => {
     Share.share({ message: toCsv(records), title: t('shareSubject') }).catch(e =>
       console.warn('[HistorySheet] could not share the history', e),
     );
@@ -541,16 +452,6 @@ export function HistorySheet({
                 onPress={toggleAll}
               >
                 <Checkbox selected={allSelected} size={20} />
-              </Pressable>
-            )}
-            {!selecting && (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={t('signOut')}
-                hitSlop={12}
-                onPress={confirmSignOut}
-              >
-                <AccountIcon size={20} signedIn={email != null} />
               </Pressable>
             )}
             {records.length > 0 && !selecting && (

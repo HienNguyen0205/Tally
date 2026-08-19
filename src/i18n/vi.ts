@@ -41,6 +41,7 @@ export const vi = {
   torchOff: 'Tắt đèn flash',
   pickFromLibrary: 'Quét ảnh có sẵn trong thư viện',
   openHistory: 'Xem lịch sử quét',
+  openSettings: 'Mở cài đặt',
   flipCamera: 'Đổi camera trước sau',
   shutter: 'Chụp và quét',
   tapToFocus: 'Chạm vào khung hình để lấy nét',
@@ -113,8 +114,25 @@ export const vi = {
   shareHistory: 'Xuất CSV',
   shareSubject: 'Lịch sử quét Tally',
 
+  // Settings screen
+  settingsTitle: 'Cài đặt',
+  languageSection: 'NGÔN NGỮ',
+  detectionSection: 'PHÁT HIỆN',
+  hapticsLabel: 'Rung khi phát hiện người',
+  hapticsHint: 'Bật hoặc tắt cảnh báo rung khi quét thấy người',
+  defaultThresholdLabel: 'Ngưỡng tin cậy mặc định',
+  defaultThresholdHint: 'Mức tin cậy dùng mỗi khi mở app, không ảnh hưởng lần quét đang xem',
+  dataSection: 'DỮ LIỆU',
+  clearHistory: 'Xoá lịch sử quét',
+  clearHistoryHint: 'Xoá toàn bộ lịch sử đã lưu, gồm cả bản sao trên đám mây',
+  clearHistoryConfirmTitle: 'Xoá toàn bộ lịch sử?',
+  clearHistoryConfirmBody:
+    'Xoá vĩnh viễn %{count} đã lưu trên máy này và trên đám mây. Không thể hoàn tác.',
+  scanCount: '%{count} lần quét',
+
   // Account
   authEyebrow: 'TÀI KHOẢN',
+  signedInAs: 'Đã đăng nhập: %{email}',
   authSubtitle: 'Đăng nhập để bắt đầu đếm',
   emailLabel: 'Email',
   emailHint: 'ban@vidu.com',
@@ -181,6 +199,7 @@ const PLURAL_KEY_LIST = [
   'peopleCount',
   'objectCount',
   'sumPhotos',
+  'scanCount',
 ] as const;
 
 /** The keys whose English wording changes with the number beside it. */
@@ -237,4 +256,8 @@ export interface Params extends Record<PluralKey, { count: number }> {
   /** `name` must already be in the right grammatical number - see labels.ts. */
   countOf: { count: number; name: string };
   sumPhotos: { count: number };
+  scanCount: { count: number };
+  /** Pre-rendered via `scanCount` - same reason `batchTotal` takes strings. */
+  clearHistoryConfirmBody: { count: string };
+  signedInAs: { email: string };
 }

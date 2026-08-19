@@ -1,4 +1,4 @@
-import React from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -39,27 +39,27 @@ export function AuthScreen() {
   const landscape = width > height;
 
   const { register, signIn } = useAuth();
-  const [mode, setMode] = React.useState<Mode>('register');
-  const [emailInput, setEmailInput] = React.useState('');
-  const [passwordInput, setPasswordInput] = React.useState('');
-  const [revealed, setRevealed] = React.useState(false);
-  const [submitting, setSubmitting] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-  const [notice, setNotice] = React.useState<string | null>(null);
+  const [mode, setMode] = useState<Mode>('register');
+  const [emailInput, setEmailInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
+  const [revealed, setRevealed] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
-  const passwordRef = React.useRef<TextInput | null>(null);
+  const passwordRef = useRef<TextInput | null>(null);
 
   const brandIn = useEnter(0);
   const tabsIn = useEnter(90);
   const cardIn = useEnter(180);
 
-  const switchMode = React.useCallback((next: Mode) => {
+  const switchMode = useCallback((next: Mode) => {
     setMode(next);
     setError(null);
     setNotice(null);
   }, []);
 
-  const submit = React.useCallback(async () => {
+  const submit = useCallback(async () => {
     setError(null);
     setNotice(null);
 

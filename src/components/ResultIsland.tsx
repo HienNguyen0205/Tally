@@ -13,6 +13,9 @@ import { t } from '../i18n';
 import { GlassSurface } from './GlassSurface';
 
 interface Props {
+  /** Screen-space top offset, in px - DetectorScreen computes this from the
+   *  safe area inset plus the header pill above, so the two never overlap. */
+  top: number;
   peopleCount: number;
   objectCount: number;
   /** Running total while captures are being added up; null when off. */
@@ -27,6 +30,7 @@ const ease = Easing.bezier(...EASE_OUT_EXPO);
  * deserves the space more than a hint line does.
  */
 export function ResultIsland({
+  top,
   peopleCount,
   objectCount,
   session = null,
@@ -66,7 +70,7 @@ export function ResultIsland({
 
   return (
     <View
-      style={[styles.anchor, landscape && styles.anchorLandscape]}
+      style={[styles.anchor, landscape && styles.anchorLandscape, { top }]}
       pointerEvents="none"
     >
       <Animated.View style={[shellStyle, styles.stack]}>
@@ -112,7 +116,6 @@ export function ResultIsland({
 const styles = StyleSheet.create({
   anchor: {
     position: 'absolute',
-    top: 64,
     left: 0,
     right: 0,
     alignItems: 'center',
@@ -121,7 +124,6 @@ const styles = StyleSheet.create({
   // matching whatever the anchor above decided.
   stack: { alignItems: 'center' },
   anchorLandscape: {
-    top: 28,
     left: 28,
     right: undefined,
     alignItems: 'flex-start',

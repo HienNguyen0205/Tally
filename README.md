@@ -53,20 +53,28 @@ their thumbnails) across devices and restores them after a reinstall.
   scan, and stays silent when it isn't confident.
 - Camera controls: torch, front/back flip, 1×/2×/3×/5× zoom steps (steps beyond
   `device.maxZoom` are dropped automatically), tap-to-focus, and a confidence
-  threshold slider (default `0.6`).
-- Haptic alert when people are detected, and saving the annotated image to the
-  device photo library.
+  threshold slider (default `0.5`, user-configurable — see Settings below).
+- Haptic alert when people are detected (toggle in Settings), and saving the
+  annotated image to the device photo library.
 - Adaptive portrait/landscape layout for every control cluster.
+- **A floating header** on the camera screen (History, Settings) alongside the
+  bottom toolbar (torch, library, running total, flip) — see
+  [`DetectorScreen`](src/screens/DetectorScreen.tsx).
 - **Account-gated with Supabase auth.** [`AuthScreen`](src/screens/AuthScreen.tsx)
   (email/password register or sign in) is the only thing rendered until
   [`useAuth`](src/hooks/useAuth.ts) reports a real, non-anonymous session — the
   camera in `DetectorScreen` is unreachable otherwise, see [App.tsx](App.tsx).
 - **History synced to the cloud.** Each scan uploads its row and thumbnail to
-  Supabase in the background ([`uploadScan`](src/shared/cloudSync.ts)); local
-  `AsyncStorage` stays the fast path the app actually reads from, and the cloud
-  copy is what [`restoreFromCloud`](src/shared/cloudSync.ts) pulls back down
-  when local storage is empty (reinstall or a new device). Full-size previews
-  sync the same way, lazily, only when a scan is opened.
+  Supabase in the background ([`uploadScan`](src/shared/cloudSync.ts)); the
+  local [MMKV](https://github.com/mrousavy/react-native-mmkv) copy stays the
+  fast path the app actually reads from, and the cloud copy is what
+  [`restoreFromCloud`](src/shared/cloudSync.ts) pulls back down when local
+  storage is empty (reinstall or a new device). Full-size previews sync the
+  same way, lazily, only when a scan is opened.
+- **A Settings screen** ([`SettingsScreen`](src/screens/SettingsScreen.tsx),
+  reached from the camera header): switch language instantly at runtime, toggle
+  the haptic alert, set the confidence threshold a session starts with, clear
+  local scan history, and sign out. See [Settings](#settings) below.
 
 ## Requirements
 
@@ -366,12 +374,61 @@ asserting the two agree.
 Model details, the specs verified on a real device, and what must be re-checked
 when swapping models: [assets/models/README.md](assets/models/README.md).
 
+## Settings
+
+Reached from the header on the camera screen (the gear icon), rendered by
+[`SettingsScreen`](src/screens/SettingsScreen.tsx) as a full-screen `Modal` —
+the same pattern [`HistorySheet`](src/components/HistorySheet.tsx) already
+uses, chosen there and reused here because Skia draws nothing inside an RN
+`Modal` on Android (see [`modalIcons.tsx`](src/components/modalIcons.tsx)),
+so every icon and control on this screen has to be a plain View rather than
+the Skia-drawn ones used everywhere else in the app.
+
+| Setting | Backed by |
+|---|---|
+| Language (Tiếng Việt / English) | [`setLocale()`](src/i18n/index.ts) — see [Localisation](#localisation) |
+| Haptic alert on detected people | [`useSettings`](src/hooks/useSettings.ts) → [`useAlert(enabled)`](src/hooks/useAlert.ts) |
+| Default confidence threshold | [`useSettings`](src/hooks/useSettings.ts) → seeds `DetectorScreen`'s threshold state on mount |
+| Clear local scan history | `useScanHistory`'s `removeMany`, called with every id |
+| Sign out | [`useAuth`](src/hooks/useAuth.ts) — moved here from `HistorySheet`, which no longer has an account action |
+
+The haptics toggle and default threshold are one JSON blob in MMKV
+([`shared/settings.ts`](src/shared/settings.ts)), read synchronously into
+[`useSettings`](src/hooks/useSettings.ts)'s `useState` initialiser. That
+matters for `DetectorScreen`: its confidence-threshold state seeds from
+`settings.defaultThreshold` at mount, and because the read is synchronous
+there is no placeholder value that then jumps a frame later the way an
+AsyncStorage-backed version of this would render one.
+
 ## Localisation
 
 Copy lives in [`src/i18n`](src/i18n), running on [`i18n-js`](https://github.com/fnando/i18n-js).
-Vietnamese is the default and English the fallback; the device locale is read
-once at module load through `Intl`, with a hardcoded fallback because Intl is
-compiled out of some Hermes builds.
+Vietnamese is the default and English the fallback; the device locale is
+detected through `Intl` at module load, with a hardcoded fallback because Intl
+is compiled out of some Hermes builds. A locale picked in Settings overrides
+that detection — see below.
+
+### Switching language at runtime
+
+[`setLocale()`](src/i18n/index.ts) persists the choice to MMKV and switches
+every `t()` call immediately, no restart. Reaching every `t()` call is the
+interesting part: `t()` is a plain function, not a hook, so calling
+`setLocale()` alone would not make anything on screen re-render.
+[`useLocale()`](src/i18n/index.ts) is what closes that gap — called once, in
+`Root` ([App.tsx](App.tsx)), purely to subscribe that component to locale
+changes. Since nothing in this codebase memoises with `React.memo`, the
+re-render `useLocale()` forces there cascades to every descendant, and each
+one's `t()` calls pick up the new language on their next pass. No context
+provider, no prop threading, no remount — `DetectorScreen`'s camera session
+stays alive across a language switch.
+
+The saved override itself is applied the same way detection is: synchronously,
+as top-level code in [`src/i18n/index.ts`](src/i18n/index.ts), before anything
+ever renders. MMKV reads
+are synchronous, so — unlike an AsyncStorage-backed version of this file would
+need — there is no "loading" window where the wrong language could flash on
+screen for a returning user, and no gate for App.tsx to sit behind while it
+waits.
 
 `t()` is a typed wrapper rather than `i18n.t` directly, and the signature is the
 reason it exists:
@@ -469,6 +526,25 @@ quietly wrong results:
   key for key and placeholder for placeholder. Nothing here asserts Vietnamese
   or English text, since the active locale depends on where the suite runs —
   jest resolves to `en`
+- [`__tests__/i18nRuntime.test.js`](__tests__/i18nRuntime.test.js) — the
+  runtime-switching machinery `i18n.test.js` deliberately never touches:
+  `setLocale()` actually flipping `t()` output and the live `locale` binding
+  other modules read, a saved preference applying at module load (simulated
+  with `jest.isolateModules()` — a plain `jest.resetModules()` here would
+  reset React itself between tests and break `useLocale()`'s hooks), an
+  invalid stored value falling back instead of sticking, and `useLocale()`
+  actually re-rendering a subscribed component with no context or props
+  involved
+
+MMKV needs no test setup: `createMMKV()` detects `JEST_WORKER_ID` and returns
+an in-memory instance on its own. That auto-detection runs too late to help
+here, though — `react-native-mmkv`'s own import chain reaches into
+`react-native-nitro-modules`, which touches `TurboModuleRegistry` as a
+side effect of merely being imported, before the test-environment check ever
+gets a chance to run. [`__mocks__/react-native-mmkv.js`](__mocks__/react-native-mmkv.js)
+replaces the package outright under Jest (automatic for anything in
+`__mocks__` next to `node_modules` — no `jest.mock()` call needed) with a
+minimal `Map`-backed `createMMKV()`, so that chain never executes.
 
 Linting:
 
@@ -487,18 +563,20 @@ ObjectDetector/
       boxLayout.ts     #   Coordinate mapping: model square → frame → screen
       constants.ts     #   MODEL_SIZE, PERSON_CLASS_ID, thresholds, NMS IoU
       detections.ts    #   Detection type, IoU, NMS merge
-      labels.ts        #   The 80 COCO labels + Vietnamese translations
+      labels.ts        #   The 80 COCO labels + Vietnamese translations, labelForCount()
       theme.ts         #   Colours, fonts, radii, easing curves
       history.ts       #   ScanRecord, day grouping, local JSON (de)serialisation
       thumbnail.ts     #   Encoding a scan's thumbnail/preview JPEGs
       export.ts        #   Sharing/exporting a saved scan
-      supabase.ts      #   Supabase client (AsyncStorage-backed session), getUserId()
+      storage.ts       #   The one shared MMKV instance, + an async-shaped adapter for Supabase
+      settings.ts      #   Haptics/defaultThreshold: shape, defaults, MMKV (de)serialisation
+      supabase.ts      #   Supabase client (MMKV-backed session via storage.ts), getUserId()
       cloudSync.ts     #   Uploads/downloads scans, thumbnails and previews to Supabase
       authErrors.ts    #   Supabase auth errors → translated copy; email/password checks
     i18n/              # All UI copy. See "Localisation" below
       vi.ts            #   Vietnamese catalog (source of truth) + the Params contract
       en.ts            #   English catalog, typed against vi
-      index.ts         #   i18n-js instance, locale detection, the typed t()
+      index.ts         #   i18n-js instance, locale detection/override, setLocale, useLocale, t()
     detection/         # The model pipeline, orchestrated only by DetectorScreen
       annotate.ts      #   Burn boxes into the photo at save time (offscreen Skia)
       classify.ts      #   Second-stage: crop a box, name it from 1000 ImageNet classes
@@ -509,15 +587,21 @@ ObjectDetector/
     components/        # One file per component. HUD (detection boxes, class filter,
                        #   photo picker, threshold slider, detail/history sheets) plus the
                        #   shared primitives: GlassSurface, CtaButton, SegmentedTabs,
-                       #   FormField, AmbientBackdrop, IconButton, icons
-    hooks/             # useAuth (Supabase session), useScanHistory (local + cloud history),
-                       #   useCameraControls, useClassFilter, useRefinedLabel,
-                       #   useAlert (haptics), useSavePhoto, useEnter (entry animation)
-    screens/           # AuthScreen (sign in/register), DetectorScreen (camera, scan worklet, the whole HUD)
+                       #   FormField, AmbientBackdrop, IconButton, icons (Skia) and
+                       #   modalIcons (plain View, for use inside a Modal)
+    hooks/             # useAuth (Supabase session), useSettings (haptics/defaultThreshold),
+                       #   useScanHistory (local + cloud history), useCameraControls,
+                       #   useClassFilter, useRefinedLabel, useAlert (haptics, mutable via
+                       #   Settings), useSavePhoto, useEnter (entry animation)
+    screens/           # AuthScreen (sign in/register), DetectorScreen (camera, scan worklet,
+                       #   the whole HUD), SettingsScreen (language, haptics, default
+                       #   threshold, clear history, sign out)
   assets/
     fonts/             # Geist (SIL OFL), linked with react-native-asset
     models/            # yolo26n.tflite + notes on its verified tensor layout
-  __tests__/           # Box coordinate tests + the i18n catalog contract
+  __mocks__/
+    react-native-mmkv.js # Jest replacement for the native module - see Testing above
+  __tests__/           # Box coordinate tests + the i18n catalog/runtime contracts
   patches/             # patch-package patch for react-native-fast-tflite
   android/             # Android project (bare workflow)
   ios/                 # iOS project + Podfile
@@ -598,5 +682,5 @@ ObjectDetector/
 | [`react-native-reanimated`](https://github.com/software-mansion/react-native-reanimated) | HUD and shutter animations |
 | [`@react-native-community/blur`](https://github.com/Kureev/react-native-blur) | Frosted-glass backgrounds for the HUD cards |
 | [`@supabase/supabase-js`](https://github.com/supabase/supabase-js) | Auth (email/password) and the Postgres/storage backend for history sync |
-| [`@react-native-async-storage/async-storage`](https://github.com/react-native-async-storage/async-storage) | Local history/preview cache, and the session store `supabase-js` persists into |
+| [`react-native-mmkv`](https://github.com/mrousavy/react-native-mmkv) | The one on-device key/value store — history/preview cache, settings, the locale override, and (via an async-shaped adapter) the session store `supabase-js` persists into |
 | [`i18n-js`](https://github.com/fnando/i18n-js) | Translation lookup, interpolation and locale fallback — see [Localisation](#localisation) |

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { storage } from '../shared/storage';
 import {
   deleteScans,
   downloadPreview,
@@ -28,9 +28,9 @@ const KEY = 'tally.history.v1';
  * screen that only shows thumbnails. Separate keys keep the list load cheap
  * and let a preview be read only when a row is opened.
  *
- * @react-native-async-storage/async-storage is SQLite-backed with no fixed
- * per-app quota - the "6MB AsyncStorage default" once assumed here belonged
- * to React Native's old built-in AsyncStorage, not this package.
+ * MMKV has no fixed per-app quota the way React Native's old built-in
+ * AsyncStorage once did (a 6MB default some comments here used to worry
+ * about) - it just mmaps a file and grows it.
  */
 const previewKey = (id: string) => `tally.preview.${id}`;
 
@@ -58,52 +58,63 @@ export function useScanHistory() {
     current.current = next;
     setRecords(next);
 
-    AsyncStorage.setItem(KEY, JSON.stringify(next)).catch(e =>
-      console.warn('[useScanHistory] could not save history', e),
-    );
-    if (orphans.length > 0) {
-      // removeMany, not the old multiRemove - this version of the library
-      // moved to the Web Storage-shaped API.
-      AsyncStorage.removeMany(orphans).catch(e =>
-        console.warn('[useScanHistory] could not drop old previews', e),
-      );
+    try {
+      storage.set(KEY, JSON.stringify(next));
+    } catch (e) {
+      console.warn('[useScanHistory] could not save history', e);
+    }
+    // No removeMany on MMKV - remove() is one key at a time, but it is a
+    // synchronous mmap write rather than a bridge call, so looping costs
+    // nothing like it would have over AsyncStorage's old multiRemove.
+    for (const key of orphans) {
+      try {
+        storage.remove(key);
+      } catch (e) {
+        console.warn('[useScanHistory] could not drop an old preview', e);
+      }
     }
   }, []);
 
   useEffect(() => {
     let cancelled = false;
 
-    AsyncStorage.getItem(KEY)
-      .then(async raw => {
-        if (cancelled) return;
-        const stored = parseHistory(raw);
+    (async () => {
+      // The read itself is synchronous (MMKV), but the whole effect body stays
+      // async because the cloud-restore fallback below is a real network call.
+      let stored: ScanRecord[] = [];
+      try {
+        stored = parseHistory(storage.getString(KEY) ?? null);
+      } catch (e) {
+        // Unreadable storage is not worth an alert - the app works fine
+        // without history, it just starts empty.
+        console.warn('[useScanHistory] could not read history', e);
+      }
+      if (cancelled) return;
 
-        // Empty local storage with a non-empty cloud history means this is a
-        // reinstall or a new device, not someone with a genuinely blank
-        // history - restore instead of starting over. A non-empty local list
-        // is left alone: it is already the fast path, and hitting the network
-        // on every ordinary launch would make the app wait on a signal it has
-        // never needed before.
-        if (stored.length > 0) {
-          current.current = stored;
-          setRecords(stored);
-          return;
-        }
+      // Empty local storage with a non-empty cloud history means this is a
+      // reinstall or a new device, not someone with a genuinely blank
+      // history - restore instead of starting over. A non-empty local list is
+      // left alone: it is already the fast path, and hitting the network on
+      // every ordinary launch would make the app wait on a signal it has
+      // never needed before.
+      if (stored.length > 0) {
+        current.current = stored;
+        setRecords(stored);
+        return;
+      }
 
-        const restored = await restoreFromCloud(HISTORY_LIMIT);
-        if (cancelled || restored.length === 0) return;
-        current.current = restored;
-        setRecords(restored);
-        AsyncStorage.setItem(KEY, JSON.stringify(restored)).catch(e =>
-          console.warn('[useScanHistory] could not cache restored history', e),
-        );
-      })
-      // Unreadable storage is not worth an alert - the app works fine without
-      // history, it just starts empty.
-      .catch(e => console.warn('[useScanHistory] could not read history', e))
-      .finally(() => {
-        if (!cancelled) setLoaded(true);
-      });
+      const restored = await restoreFromCloud(HISTORY_LIMIT);
+      if (cancelled || restored.length === 0) return;
+      current.current = restored;
+      setRecords(restored);
+      try {
+        storage.set(KEY, JSON.stringify(restored));
+      } catch (e) {
+        console.warn('[useScanHistory] could not cache restored history', e);
+      }
+    })().finally(() => {
+      if (!cancelled) setLoaded(true);
+    });
 
     return () => {
       cancelled = true;
@@ -144,9 +155,11 @@ export function useScanHistory() {
    *  fallback - the fallback must NOT go through addPreview, or a preview
    *  just downloaded from Supabase would immediately be uploaded right back. */
   const cacheLocally = useCallback((id: string, data: string) => {
-    AsyncStorage.setItem(previewKey(id), data).catch(e =>
-      console.warn('[useScanHistory] could not save preview', e),
-    );
+    try {
+      storage.set(previewKey(id), data);
+    } catch (e) {
+      console.warn('[useScanHistory] could not save preview', e);
+    }
   }, []);
 
   /** Stores the full-size preview for a scan, locally and in the cloud. Fire
@@ -166,15 +179,17 @@ export function useScanHistory() {
    * Null for a scan saved before previews existed, or if both the local cache
    * and the cloud fall through. A restored history has records with no local
    * preview at all - that miss falls through to Supabase, and a hit is
-   * written back to AsyncStorage so opening the same scan twice only ever
-   * pays for the network once.
+   * written back to MMKV so opening the same scan twice only ever pays for
+   * the network once.
    */
   const loadPreview = useCallback(
     async (id: string) => {
-      const cached = await AsyncStorage.getItem(previewKey(id)).catch(e => {
+      let cached: string | null = null;
+      try {
+        cached = storage.getString(previewKey(id)) ?? null;
+      } catch (e) {
         console.warn('[useScanHistory] could not read preview', e);
-        return null;
-      });
+      }
       if (cached != null) return cached;
 
       const remote = await downloadPreview(id);

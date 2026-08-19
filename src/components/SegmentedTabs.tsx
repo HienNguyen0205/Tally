@@ -1,4 +1,4 @@
-import React from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
@@ -35,12 +35,12 @@ export function SegmentedTabs<T extends string>({
   selected,
   onSelect,
 }: Props<T>) {
-  const [rowW, setRowW] = React.useState(0);
+  const [rowW, setRowW] = useState(0);
   const segmentW = rowW === 0 ? 0 : (rowW - BEZEL_PAD * 2) / 2;
 
   const slide = useSharedValue(0);
   const index = selected === options[1].value ? 1 : 0;
-  React.useEffect(() => {
+  useEffect(() => {
     slide.value = withTiming(index, { duration: 460, easing: ease });
   }, [index, slide]);
 

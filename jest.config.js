@@ -13,4 +13,9 @@ module.exports = {
   transformIgnorePatterns: [
     'node_modules[/\\\\](?!(?:@react-native|@shopify|react-native))',
   ],
+  // No moduleNameMapper for storage: react-native-mmkv's createMMKV() detects
+  // JEST_WORKER_ID itself and returns an in-memory mock automatically (see
+  // node_modules/react-native-mmkv/lib/createMMKV/createMMKV.js). The old
+  // AsyncStorage-backed version of this file needed one, since that package's
+  // real native module throws under Jest with no device to back it.
 };

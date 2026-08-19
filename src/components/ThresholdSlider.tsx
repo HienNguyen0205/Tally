@@ -20,6 +20,12 @@ const ease = Easing.bezier(...EASE_OUT_EXPO);
 interface Props {
   value: number;
   onChange: (v: number) => void;
+  /**
+   * The leading target icon is Skia - blank inside an RN `Modal` on Android
+   * (see modalIcons.tsx). SettingsScreen renders this inside one, so it opts
+   * out rather than shipping an invisible icon that still eats layout space.
+   */
+  showIcon?: boolean;
 }
 
 /**
@@ -34,7 +40,7 @@ function toProgress(value: number): number {
   return (value - MIN) / (MAX - MIN);
 }
 
-export function ThresholdSlider({ value, onChange }: Props) {
+export function ThresholdSlider({ value, onChange, showIcon = true }: Props) {
   const travel = TRACK_W - KNOB;
   const progress = useSharedValue(toProgress(value));
   // The value at drag start, so finger travel accumulates onto it. Derived from
@@ -114,7 +120,9 @@ export function ThresholdSlider({ value, onChange }: Props) {
       accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
       {...pan.panHandlers}
     >
-      <Icon name="target" size={15} color={COLORS.textMuted} strokeWidth={1.5} />
+      {showIcon && (
+        <Icon name="target" size={15} color={COLORS.textMuted} strokeWidth={1.5} />
+      )}
 
       <View style={styles.track}>
         <Animated.View style={[styles.fill, fillStyle]} />

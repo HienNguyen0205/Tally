@@ -66,6 +66,14 @@ const PATHS = {
       'C8.3 17.9 4.8 15.5 2 12 A18.4 18.4 0 0 1 5.6 8.2 ' +
       'M9.9 9.9 A3 3 0 0 0 14.1 14.1 M4 4 L20 20',
   ),
+  // Three sliders at different positions - the settings screen entry point.
+  // Each knob is a small ring drawn as two half-circle arcs, the same trick
+  // 'sum' and 'target' use, so a stroke-only path still reads as a filled dot.
+  settings: makePath(
+    'M3 6 L21 6 M15 3.6 A2.4 2.4 0 1 0 15 8.4 A2.4 2.4 0 1 0 15 3.6 ' +
+      'M3 12 L21 12 M9 9.6 A2.4 2.4 0 1 0 9 14.4 A2.4 2.4 0 1 0 9 9.6 ' +
+      'M3 18 L21 18 M16 15.6 A2.4 2.4 0 1 0 16 20.4 A2.4 2.4 0 1 0 16 15.6',
+  ),
 };
 
 export type IconName = keyof typeof PATHS;
