@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 
 import { storage } from '../shared/storage';
 import {
@@ -8,6 +9,14 @@ import {
   uploadPreview,
   uploadScan,
 } from '../shared/cloudSync';
+import {
+  clearDeletes,
+  clearUpload,
+  markDelete,
+  markUpload,
+  pendingDeletes,
+  pendingUploads,
+} from '../shared/pendingSync';
 import {
   addRecord,
   HISTORY_LIMIT,
@@ -138,9 +147,16 @@ export function useScanHistory(guest: boolean) {
     (record: ScanRecord) => {
       if (guest) return;
       commit(addRecord(current.current, record));
-      uploadScan(record, record.thumbnail).catch(e =>
-        console.warn('[useScanHistory] could not upload scan', e),
-      );
+
+      // Queued before the attempt, not after it fails: the upload is a real
+      // network round trip and the app can be backgrounded or killed part way
+      // through it, which would leave a scan neither uploaded nor pending.
+      markUpload(record.id);
+      uploadScan(record, record.thumbnail)
+        .then(done => {
+          if (done) clearUpload(record.id);
+        })
+        .catch(e => console.warn('[useScanHistory] could not upload scan', e));
     },
     [commit, guest],
   );
@@ -159,9 +175,18 @@ export function useScanHistory(guest: boolean) {
       if (guest) return;
       const drop = new Set(ids);
       commit(current.current.filter(r => !drop.has(r.id)));
-      deleteScans(ids).catch(e =>
-        console.warn('[useScanHistory] could not delete cloud scans', e),
-      );
+
+      // markDelete also drops each id from the upload queue, so a scan removed
+      // before its upload ever landed is not recreated in the cloud by the
+      // next flush.
+      for (const id of ids) markDelete(id);
+      deleteScans(ids)
+        .then(done => {
+          if (done) clearDeletes(ids);
+        })
+        .catch(e =>
+          console.warn('[useScanHistory] could not delete cloud scans', e),
+        );
     },
     [commit, guest],
   );
@@ -177,6 +202,65 @@ export function useScanHistory(guest: boolean) {
     }
   }, []);
 
+  /**
+   * Retries everything the cloud never received.
+   *
+   * Runs on mount and whenever the app comes back to the foreground - the
+   * common case is scanning with no signal, pocketing the phone, and getting
+   * a connection back without ever restarting the app, which a mount-only
+   * flush would miss for days.
+   *
+   * Each id is looked up in the local history rather than in a queued copy of
+   * the record. An id with no record left is dropped: the only way that
+   * happens is HISTORY_LIMIT evicting it, and the cloud is a backup of what
+   * the phone still holds, not an archive of what it has forgotten.
+   */
+  const flush = useCallback(async () => {
+    if (guest) return;
+
+    const deletes = pendingDeletes();
+    if (deletes.length > 0 && (await deleteScans(deletes))) {
+      clearDeletes(deletes);
+    }
+
+    for (const id of pendingUploads()) {
+      const record = current.current.find(r => r.id === id);
+      if (record == null) {
+        clearUpload(id);
+        continue;
+      }
+
+      if (!(await uploadScan(record, record.thumbnail))) continue;
+
+      // The preview is optional and lives outside the record, so a scan with
+      // none is still fully uploaded. Only a preview that exists locally and
+      // fails to land keeps the id queued.
+      const preview = storage.getString(previewKey(id));
+      if (preview != null && !(await uploadPreview(id, preview))) continue;
+
+      clearUpload(id);
+    }
+  }, [guest]);
+
+  // Gated on `loaded`, because flush looks each pending id up in
+  // `current.current` - running before the history is read would find nothing
+  // and drop every queued id as evicted.
+  useEffect(() => {
+    if (!loaded || guest) return;
+
+    const run = () => {
+      flush().catch(e =>
+        console.warn('[useScanHistory] could not flush the sync queue', e),
+      );
+    };
+    run();
+
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') run();
+    });
+    return () => sub.remove();
+  }, [loaded, guest, flush]);
+
   /** Stores the full-size preview for a scan, locally and in the cloud. Fire
    *  and forget both ways - a record without one still opens, it just has
    *  nothing to show. */
@@ -184,9 +268,17 @@ export function useScanHistory(guest: boolean) {
     (id: string, data: string) => {
       if (guest) return;
       cacheLocally(id, data);
-      uploadPreview(id, data).catch(e =>
-        console.warn('[useScanHistory] could not upload preview', e),
-      );
+      uploadPreview(id, data)
+        .then(done => {
+          // Re-queues the whole scan rather than the preview alone: flush
+          // re-sends both, and both upsert, so one queue entry covers either
+          // half going missing.
+          if (!done) markUpload(id);
+        })
+        .catch(e => {
+          console.warn('[useScanHistory] could not upload preview', e);
+          markUpload(id);
+        });
     },
     [cacheLocally, guest],
   );

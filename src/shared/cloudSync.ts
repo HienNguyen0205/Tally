@@ -20,19 +20,28 @@ function objectPath(userId: string, id: string, kind: 'thumb' | 'preview') {
  * Mirrors one finished scan to Supabase: the row, then its thumbnail.
  *
  * Fire-and-forget from the caller's side - scanning has to work with no
- * signal, so this never blocks or throws into the UI. A failed upload here
- * just means that scan is missing from the cloud copy until the next
- * successful sync; the local MMKV copy the app actually reads from is
- * unaffected either way.
+ * signal, so this never blocks or throws into the UI. The local MMKV copy the
+ * app actually reads from is unaffected either way; what a failure costs is a
+ * gap in the cloud backup, which is why the boolean matters (see below).
+ *
+ * Returns whether the scan is now fully in the cloud. False keeps the id in
+ * the retry queue - see shared/pendingSync.ts - so a scan taken with no
+ * signal is not silently lost from the backup forever, which is exactly what
+ * used to happen when this returned void and the caller only logged.
+ *
+ * Idempotent, because a retry has no way to know how much of the previous
+ * attempt landed: the row upserts rather than inserts, and the object upload
+ * passes `upsert` so re-sending an image that already arrived is a write, not
+ * a "resource already exists" error that would wedge the queue permanently.
  */
 export async function uploadScan(
   record: ScanRecord,
   thumbnail: string,
-): Promise<void> {
+): Promise<boolean> {
   const userId = await getUserId();
-  if (userId == null) return;
+  if (userId == null) return false;
 
-  const { error: insertError } = await supabase.from('scans').insert({
+  const { error: upsertError } = await supabase.from('scans').upsert({
     id: record.id,
     user_id: userId,
     at: new Date(record.at).toISOString(),
@@ -40,43 +49,60 @@ export async function uploadScan(
     total: record.total,
     counts: record.counts,
   });
-  if (insertError != null) {
-    console.warn('[cloudSync] could not upload scan row', insertError);
-    return;
+  if (upsertError != null) {
+    console.warn('[cloudSync] could not upload scan row', upsertError);
+    return false;
   }
 
-  if (thumbnail === '') return;
+  // Nothing to store is a finished job, not a pending one.
+  if (thumbnail === '') return true;
   const { error: storageError } = await supabase.storage
     .from(BUCKET)
     .upload(objectPath(userId, record.id, 'thumb'), decode(thumbnail), {
       contentType: 'image/jpeg',
+      upsert: true,
     });
   if (storageError != null) {
     console.warn('[cloudSync] could not upload thumbnail', storageError);
+    return false;
   }
+  return true;
 }
 
 /** Uploads the full-size preview once it exists - see makePreview, it is
  *  encoded after the scan itself already finished saving. */
-export async function uploadPreview(id: string, preview: string): Promise<void> {
+export async function uploadPreview(
+  id: string,
+  preview: string,
+): Promise<boolean> {
   const userId = await getUserId();
-  if (userId == null) return;
+  if (userId == null) return false;
 
   const { error } = await supabase.storage
     .from(BUCKET)
     .upload(objectPath(userId, id, 'preview'), decode(preview), {
       contentType: 'image/jpeg',
+      upsert: true,
     });
   if (error != null) {
     console.warn('[cloudSync] could not upload preview', error);
+    return false;
   }
+  return true;
 }
 
-/** Deletes rows and both possible images for a batch of scans, best effort. */
-export async function deleteScans(ids: readonly string[]): Promise<void> {
-  if (ids.length === 0) return;
+/**
+ * Deletes rows and both possible images for a batch of scans, best effort.
+ *
+ * Returns whether the rows are gone. A false here queues the ids for retry
+ * just like a failed upload does: without it, deleting a scan while offline
+ * would leave the cloud row behind, and the next reinstall would restore a
+ * scan the user had already thrown away.
+ */
+export async function deleteScans(ids: readonly string[]): Promise<boolean> {
+  if (ids.length === 0) return true;
   const userId = await getUserId();
-  if (userId == null) return;
+  if (userId == null) return false;
 
   const { error: rowError } = await supabase
     .from('scans')
@@ -84,6 +110,7 @@ export async function deleteScans(ids: readonly string[]): Promise<void> {
     .in('id', ids);
   if (rowError != null) {
     console.warn('[cloudSync] could not delete scan rows', rowError);
+    return false;
   }
 
   // Deleting a name that was never uploaded (e.g. a scan with no thumbnail,
@@ -97,8 +124,12 @@ export async function deleteScans(ids: readonly string[]): Promise<void> {
     .from(BUCKET)
     .remove(paths);
   if (storageError != null) {
+    // The rows are already gone, which is what a restore reads - a leftover
+    // image is wasted bytes, not a scan coming back from the dead. Not worth
+    // holding the whole batch in the retry queue for.
     console.warn('[cloudSync] could not delete scan images', storageError);
   }
+  return true;
 }
 
 /**

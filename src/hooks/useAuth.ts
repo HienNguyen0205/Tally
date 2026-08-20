@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { AuthError } from '@supabase/supabase-js';
 
 import { supabase } from '../shared/supabase';
+import { clearAllPending } from '../shared/pendingSync';
 
 export interface AuthState {
   /** True until the first session check has resolved. */
@@ -71,8 +72,20 @@ export function useAuth() {
     return { error };
   }, []);
 
-  /** Drops the session. App.tsx reacts by swapping back to AuthScreen. */
-  const signOut = useCallback(() => supabase.auth.signOut(), []);
+  /**
+   * Drops the session. App.tsx reacts by swapping back to AuthScreen.
+   *
+   * The retry queue goes with it. Its entries are bare scan ids with no
+   * owner attached, and uploadScan stamps whatever session is current at the
+   * time - so leaving them behind would let the next account to sign in on
+   * this device flush the previous one's scans into its own cloud history.
+   * Dropping them costs that user their offline backup for those scans;
+   * writing them to the wrong account would be worse.
+   */
+  const signOut = useCallback(async () => {
+    clearAllPending();
+    return supabase.auth.signOut();
+  }, []);
 
   return { ...state, register, signIn, signOut };
 }
