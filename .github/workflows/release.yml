@@ -42,7 +42,13 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # Read-only: a release runs off a tag, so the cache it would write is
+      # keyed to a ref nothing else ever builds from - it could only ever be
+      # dead weight against the repo's 10GB budget. It still reads main's
+      # cache, which is the half that saves time here.
       - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: true
 
       - uses: ruby/setup-ruby@v1
         with:

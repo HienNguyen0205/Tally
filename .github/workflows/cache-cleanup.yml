@@ -1,0 +1,32 @@
+name: Cache cleanup
+
+# GitHub never deletes a cache on its own - entries only leave when the repo
+# passes its 10GB limit and the oldest are evicted, which is a race the biggest
+# caches win. A merged PR's caches are dead the moment it closes, so this
+# deletes them outright rather than leaving them to crowd out main's.
+#
+# CI already keeps PR branches from writing a Gradle cache at all
+# (cache-read-only in ci.yml), but setup-node and setup-ruby still write theirs
+# whenever a branch touches package-lock.json or Gemfile.lock, and those are
+# what accumulate here.
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      # Deleting a cache is an Actions write, and nothing else here needs a
+      # token - the job never checks the repository out.
+      actions: write
+    steps:
+      - name: Delete caches for the closed PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          # The ref a pull_request run caches under, not the head branch.
+          REF: refs/pull/${{ github.event.pull_request.number }}/merge
+        # Most PRs leave no caches behind at all; without this the step would
+        # fail on the common case.
+        run: gh cache delete --all --ref "$REF" --succeed-on-no-caches
