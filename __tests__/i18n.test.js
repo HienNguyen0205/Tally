@@ -22,10 +22,8 @@ const active = locale === 'vi' ? vi : en;
 const INTERPOLATED = [
   ['zoomTimes', { count: 3 }],
   ['scanningProgress', { done: 2, total: 5 }],
-  ['classCount', { count: 7 }],
-  ['classCountPartial', { shown: 3, count: 7 }],
-  ['classChip', { name: 'thuyền', count: 4 }],
-  ['boxLabel', { name: 'thuyền', percent: 64 }],
+  ['faceCount', { count: 7 }],
+  ['boxLabel', { percent: 64 }],
   ['percent', { n: 64 }],
   ['limitedNotice', { count: 12 }],
   ['scanSelected', { count: 12 }],
@@ -33,17 +31,10 @@ const INTERPOLATED = [
   ['signOutConfirmBody', { email: 'a@b.co' }],
   ['confirmEmailSent', { email: 'a@b.co' }],
   ['batchTitle', { count: 9 }],
-  ['batchTotal', { people: '3 people', total: '11 objects' }],
-  ['peopleCount', { count: 3 }],
-  ['objectCount', { count: 11 }],
-  ['countOf', { count: 4, name: 'thuyền' }],
   ['sumPhotos', { count: 9 }],
   ['scanCount', { count: 5 }],
   ['weekTitle', { days: 7 }],
-  [
-    'weekTotal',
-    { scans: '5 scans', people: '3 people', total: '11 objects' },
-  ],
+  ['weekTotal', { scans: '5 scans', faces: '11 faces' }],
   ['clearHistoryConfirmBody', { count: '5 scans' }],
   ['signedInAs', { email: 'a@b.co' }],
 ];
@@ -79,9 +70,8 @@ describe('pluralisation', () => {
     // the "does not inflect" test below for the vi side of the same fact.
     if (locale !== 'en') return;
     for (const key of PLURAL_KEYS) {
-      const params = key === 'classChip' ? { name: 'x' } : {};
-      const one = t(key, { ...params, count: 1 });
-      const many = t(key, { ...params, count: 3 });
+      const one = t(key, { count: 1 });
+      const many = t(key, { count: 3 });
       expect(one).not.toBe(many);
     }
   });
@@ -136,23 +126,23 @@ describe('catalogs', () => {
 });
 
 describe('labelForCount', () => {
-  // classId 0 is 'person' in COCO - the one irregular plural that would slip
-  // past a naive "+s" rule silently, so it is worth pinning by name.
-  const PERSON = 0;
-  // A regular noun, to confirm the common case still gets an 's'.
-  const BOAT = 8;
+  const FACE = 0;
 
   it('does not inflect in Vietnamese', () => {
     if (locale !== 'vi') return;
-    expect(labelForCount(PERSON, 1)).toBe(labelForCount(PERSON, 3));
-    expect(labelForCount(BOAT, 1)).toBe(labelForCount(BOAT, 3));
+    expect(labelForCount(FACE, 1)).toBe(labelForCount(FACE, 3));
   });
 
-  it('inflects irregular and regular nouns correctly in English', () => {
+  it('inflects in English', () => {
     if (locale !== 'en') return;
-    expect(labelForCount(PERSON, 1)).toBe('person');
-    expect(labelForCount(PERSON, 3)).toBe('people');
-    expect(labelForCount(BOAT, 1)).toBe('boat');
-    expect(labelForCount(BOAT, 3)).toBe('boats');
+    expect(labelForCount(FACE, 1)).toBe('face');
+    expect(labelForCount(FACE, 3)).toBe('faces');
+  });
+
+  // A class the model cannot emit means the label table and the model have
+  // drifted apart. Showing the raw index makes that obvious rather than
+  // silently calling some other class a face.
+  it('renders an unknown class id as its index', () => {
+    expect(labelForCount(42, 1)).toBe('#42');
   });
 });

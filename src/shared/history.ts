@@ -1,11 +1,5 @@
 import type { Detection } from './detections';
-import { PERSON_CLASS_ID } from './constants';
 import { t } from '../i18n';
-
-export interface ClassCount {
-  classId: number;
-  count: number;
-}
 
 export interface ScanRecord {
   id: string;
@@ -13,9 +7,14 @@ export interface ScanRecord {
   at: number;
   /** Base64 JPEG, no data: prefix. Small enough to sit in key-value storage. */
   thumbnail: string;
-  people: number;
-  total: number;
-  counts: ClassCount[];
+  /**
+   * How many faces this scan counted.
+   *
+   * One number, not the old `people` / `total` / `counts[]` trio: the detector
+   * is single-class now, so "people" and "total" were always the same figure
+   * and the per-class breakdown always had exactly one row.
+   */
+  faces: number;
 }
 
 /**
@@ -26,24 +25,9 @@ export interface ScanRecord {
  */
 export const HISTORY_LIMIT = 50;
 
-/** Collapses the boxes on screen into the numbers a history row shows. */
-export function summarise(visible: Detection[]): {
-  people: number;
-  total: number;
-  counts: ClassCount[];
-} {
-  const byClass = new Map<number, number>();
-  for (const d of visible) {
-    byClass.set(d.classId, (byClass.get(d.classId) ?? 0) + 1);
-  }
-
-  return {
-    people: visible.filter(d => d.classId === PERSON_CLASS_ID).length,
-    total: visible.length,
-    counts: [...byClass]
-      .map(([classId, count]) => ({ classId, count }))
-      .sort((a, b) => b.count - a.count),
-  };
+/** Collapses the boxes on screen into the number a history row shows. */
+export function summarise(visible: Detection[]): { faces: number } {
+  return { faces: visible.length };
 }
 
 /**
@@ -51,13 +35,11 @@ export function summarise(visible: Detection[]): {
  * which no single record holds.
  */
 export function totalOf(records: readonly ScanRecord[]): {
-  people: number;
-  total: number;
+  faces: number;
   photos: number;
 } {
   return {
-    people: records.reduce((n, r) => n + r.people, 0),
-    total: records.reduce((n, r) => n + r.total, 0),
+    faces: records.reduce((n, r) => n + r.faces, 0),
     photos: records.length,
   };
 }
@@ -94,7 +76,7 @@ export const WEEK_DAYS = 7;
 export function weekTotals(
   records: readonly ScanRecord[],
   now: number,
-): { people: number; total: number; photos: number } {
+): { faces: number; photos: number } {
   const from = new Date(dayKey(now));
   from.setDate(from.getDate() - (WEEK_DAYS - 1));
   const start = from.getTime();
@@ -167,17 +149,37 @@ export function groupByDay(
   return sections;
 }
 
-function isRecord(v: unknown): v is ScanRecord {
-  if (typeof v !== 'object' || v === null) return false;
+/**
+ * Reads one stored record, tolerating the pre-face-detector shape.
+ *
+ * Records written by the COCO build carry `people`/`total`/`counts` and no
+ * `faces`. Rather than bumping the storage key and throwing that history away,
+ * `total` is read as the face count - it was the number of boxes on screen,
+ * which is exactly what `faces` means now. The counts are wrong in the sense
+ * that they counted chairs and boats too, but the alternative is showing the
+ * user nothing at all for scans they remember taking.
+ */
+function toRecord(v: unknown): ScanRecord | null {
+  if (typeof v !== 'object' || v === null) return null;
   const r = v as Record<string, unknown>;
-  return (
-    typeof r.id === 'string' &&
-    typeof r.at === 'number' &&
-    typeof r.thumbnail === 'string' &&
-    typeof r.people === 'number' &&
-    typeof r.total === 'number' &&
-    Array.isArray(r.counts)
-  );
+
+  if (
+    typeof r.id !== 'string' ||
+    typeof r.at !== 'number' ||
+    typeof r.thumbnail !== 'string'
+  ) {
+    return null;
+  }
+
+  const faces =
+    typeof r.faces === 'number'
+      ? r.faces
+      : typeof r.total === 'number'
+        ? r.total
+        : null;
+  if (faces === null) return null;
+
+  return { id: r.id, at: r.at, thumbnail: r.thumbnail, faces };
 }
 
 /**
@@ -193,7 +195,10 @@ export function parseHistory(raw: string | null | undefined): ScanRecord[] {
   try {
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(isRecord).slice(0, HISTORY_LIMIT);
+    return parsed
+      .map(toRecord)
+      .filter((r): r is ScanRecord => r !== null)
+      .slice(0, HISTORY_LIMIT);
   } catch {
     return [];
   }

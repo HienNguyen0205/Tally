@@ -1,17 +1,17 @@
-# Tally — ObjectDetector
+# Tally — Face Counter
 
-A React Native app that detects and counts objects in the camera frame. Press the
-shutter and the app scans **exactly one frame** with YOLO26n running on TFLite
-on-device, freezes that frame, and lays labelled bounding boxes over it so you can
-inspect, re-filter and save the result.
+A React Native app that detects and counts **faces** in the camera frame. Press
+the shutter and the app scans **exactly one frame** with a WIDER FACE-trained
+YOLO26 running on TFLite on-device, freezes that frame, and lays bounding boxes
+over it so you can inspect, re-threshold and save the result.
 
-It recognises all 80 COCO classes, with people highlighted in green and everything
-else in amber. Detection itself is fully on-device — no frame ever leaves the
-phone. History is backed by a Supabase account: signing in syncs scans (and
-their thumbnails) across devices and restores them after a reinstall.
+One class, one colour, one number. Detection is fully on-device — no frame ever
+leaves the phone. History is backed by a Supabase account: signing in syncs
+scans (and their thumbnails) across devices and restores them after a reinstall.
 
-> The bundled model is Ultralytics YOLO26n, licensed **AGPL-3.0**. Review the terms
-> (or obtain a commercial licence) before shipping a closed-source build.
+> The bundled model is an Ultralytics YOLO26 export, licensed **AGPL-3.0**.
+> Review the terms (or obtain a commercial licence) before shipping a
+> closed-source build.
 
 ## Features
 
@@ -19,14 +19,15 @@ their thumbnails) across devices and restores them after a reinstall.
   model on exactly the next frame after the shutter is pressed, then switches to
   the `frozen` state and stops rendering so the frozen image stays pinned to the
   detections that came from it.
-- **YOLO26n (COCO, 80 classes)** — `[1, 3, 640, 640]` float32 NCHW input, raw
-  `[1, 84, 8400]` head with no NMS in the graph. People are stroked green, other
-  objects amber.
+- **YOLO26 trained on WIDER FACE, single class** — `[1, 3, 640, 640]` float32
+  NCHW input, raw `[1, 5, 8400]` head (4 box coordinates + 1 score) with no NMS
+  in the graph. Shapes read straight out of the FlatBuffer, not guessed — see
+  [assets/models/README.md](assets/models/README.md).
 - **Two-pass detection.** Each scan runs the model twice on the same frame: once
   letterboxed (`scaleMode: 'contain'`, full field of view) and once centre-cropped
   (`'cover'`, which spends all 640px on the middle of the frame instead of 44% of
   it on black bars). The two passes are mapped into frame space and merged with
-  greedy NMS — so edge objects survive and small central objects get found. The
+  greedy NMS — so edge faces survive and small central faces get found. The
   model exports with `end2end: false`, meaning no NMS in the graph, so that same
   merge step is what turns 8400 raw anchors per pass into final detections —
   and what keeps the threshold slider meaningful, since nothing is discarded
@@ -37,24 +38,15 @@ their thumbnails) across devices and restores them after a reinstall.
   burned into pixels at save time, via an offscreen Skia surface.
 - **Native buffer rotation** (`enablePhysicalBufferRotation`) so the model always
   receives an upright image instead of one rotated 90° to match the sensor.
-- **Filter by class**, collapsed by default to a single summary pill and expanded
-  on tap. The chips list the classes actually present with their counts — not all
-  90 COCO labels, since the other 85 have nothing to do with the photo on screen.
-  Toggling a chip hides those boxes and drops them from the count, like the
-  threshold, without re-running anything.
 - **Scan an existing photo.** Pick an image from the device library and it goes
   through the same model, the same two passes and the same merge as a live capture.
   The resizer only accepts camera `Frame`s, so this path builds the model input
   with Skia instead — see [src/detection/scanImage.ts](src/detection/scanImage.ts).
-- **Tap any box for details**: Vietnamese class label, confidence and area ratio —
-  plus a finer name from a second model. COCO only knows 80 coarse classes, so a
-  tapped crop goes through YOLO26n-cls (1000 ImageNet classes) and the sheet shows
-  what it found: a boat becomes "gondola". It runs on tap only, never during a
-  scan, and stays silent when it isn't confident.
+- **Tap any box for details**: the label and the model's confidence.
 - Camera controls: torch, front/back flip, 1×/2×/3×/5× zoom steps (steps beyond
   `device.maxZoom` are dropped automatically), tap-to-focus, and a confidence
   threshold slider (default `0.5`, user-configurable — see Settings below).
-- Haptic alert when people are detected (toggle in Settings), and saving the
+- Haptic alert when faces are detected (toggle in Settings), and saving the
   annotated image to the device photo library.
 - Adaptive portrait/landscape layout for every control cluster.
 - **A floating header** on the camera screen (History, Settings) alongside the
@@ -89,14 +81,13 @@ their thumbnails) across devices and restores them after a reinstall.
   infinite scroll, because each page downloads a thumbnail per row. Paged-in
   records are display state only and never written back to MMKV, which would
   break the 50-record cap the local store promises.
-- **A rolling week summary** above the history list — scans, people and objects
-  over the last 7 days ([`weekTotals`](src/shared/history.ts)). Rolling rather
+- **A rolling week summary** above the history list — scans and faces over the
+  last 7 days ([`weekTotals`](src/shared/history.ts)). Rolling rather
   than a calendar week, so it does not blank out every Monday for someone who
   counts at weekends.
-- **CSV export, of everything or of a selection.** `toCsv` writes tidy data (one
-  row per class per scan) to the system share sheet; with rows ticked in
-  selection mode it exports just those, since the list already knows which ones
-  you mean.
+- **CSV export, of everything or of a selection.** `toCsv` writes one row per
+  scan (`time,faces`) to the system share sheet; with rows ticked in selection
+  mode it exports just those, since the list already knows which ones you mean.
 - **A Settings screen** ([`SettingsScreen`](src/screens/SettingsScreen.tsx),
   reached from the camera header): switch language instantly at runtime, toggle
   the haptic alert, set the confidence threshold a session starts with, clear
@@ -321,7 +312,7 @@ a binary committed once stays in the history for every future clone.
 | Permission | Platform | Why it's needed |
 |---|---|---|
 | `CAMERA` / `NSCameraUsageDescription` | Android, iOS | Frame source for scanning |
-| `VIBRATE` | Android | Haptic alert when people are detected |
+| `VIBRATE` | Android | Haptic alert when faces are detected |
 | `READ_MEDIA_IMAGES` (API 33+) / `READ_EXTERNAL_STORAGE` (≤ 32) / `NSPhotoLibraryUsageDescription` | Android, iOS | Listing library photos so one can be picked and scanned |
 | `WRITE_EXTERNAL_STORAGE` | Android ≤ 28 | Saving the annotated image; from API 29 MediaStore handles it, so it is only requested on older devices |
 | `INTERNET` | Android | Metro dev server in debug builds, plus Supabase auth and history sync in every build |
@@ -476,7 +467,7 @@ ObjectDetector/
       boxLayout.ts     #   Coordinate mapping: model square → frame → screen
       constants.ts     #   MODEL_SIZE, PERSON_CLASS_ID, thresholds, NMS IoU
       detections.ts    #   Detection type, IoU, NMS merge
-      labels.ts        #   The 80 COCO labels + Vietnamese translations, labelForCount()
+      labels.ts        #   The detector's one class name, inflected for count
       theme.ts         #   Colours, fonts, radii, easing curves
       history.ts       #   ScanRecord, day grouping, local JSON (de)serialisation
       thumbnail.ts     #   Encoding a scan's thumbnail/preview JPEGs
@@ -493,13 +484,11 @@ ObjectDetector/
       index.ts         #   i18n-js instance, locale detection/override, setLocale, useLocale, t()
     detection/         # The model pipeline, orchestrated only by DetectorScreen
       annotate.ts      #   Burn boxes into the photo at save time (offscreen Skia)
-      classify.ts      #   Second-stage: crop a box, name it from 1000 ImageNet classes
-      imagenetLabels.ts #  The 1000 ImageNet labels (generated from the model's metadata)
       modelInput.ts    #   Shared pixel-building for both TFLite models (NCHW)
       runModel.ts      #   Model output parsing, shared by the camera and photo paths
       scanImage.ts     #   Scan a library photo: Skia-built model input, both passes
-    components/        # One file per component. HUD (detection boxes, class filter,
-                       #   photo picker, threshold slider, detail/history sheets) plus the
+    components/        # One file per component. HUD (detection boxes, photo
+                       #   picker, threshold slider, detail/history sheets) plus the
                        #   shared primitives: GlassSurface, CtaButton, SegmentedTabs,
                        #   FormField, AmbientBackdrop, IconButton, Dialog (the app's own
                        #   Alert), icons (Skia) and modalIcons/Checkbox (plain View, for
@@ -513,7 +502,7 @@ ObjectDetector/
                        #   threshold, clear history, sign out)
   assets/
     fonts/             # Geist (SIL OFL), linked with react-native-asset
-    models/            # yolo26n.tflite + notes on its verified tensor layout
+    models/            # widerfaceyolo26.tflite + notes on its verified tensor layout
   __mocks__/
     react-native-mmkv.js # Jest replacement for the native module - see Testing above
   __tests__/           # Box coordinates, history/sync logic, the i18n contracts, and
@@ -531,13 +520,14 @@ ObjectDetector/
   run` investigation that turned out to be caused by the model file itself —
   offset-style buffers the bundled LiteRT runtime can't resolve, see
   [assets/models/README.md](assets/models/README.md) — not the delegate. Once
-  both models were re-exported as clean float32 (rather than the quantized
+  the models were re-exported as clean float32 (rather than the quantized
   uint8 model this app started with, which GPU delegates handle poorly),
-  Invoke ran clean on a real device (Tecno LI6) for both models: detections
-  matched the CPU run exactly (person 87%, boat 64%), and the classifier
-  named the same object ("gondola") within a few percent — the kind of drift
-  expected from GPU floating-point accumulating in a different order than
-  CPU, not a sign of anything wrong. The load-time fallback to CPU in
+  Invoke ran clean on a real device (Tecno LI6): detections matched the CPU
+  run exactly, give or take the drift expected from GPU floating-point
+  accumulating in a different order than CPU. The measurement predates the
+  switch to the face model, which is the same export path and the same input
+  square, so it should carry over — but it has not been re-measured on device.
+  The load-time fallback to CPU in
   `useEffect` still only catches failures at load, not at Invoke, so a
   different device could in principle still need it.
 - **The Skia label font must be a family that really exists on the device.**
@@ -563,10 +553,12 @@ ObjectDetector/
   Ultralytics site come from the older ONNX→TF path and are NHWC instead. Feed a
   model the wrong layout and it still runs and still returns numbers, just
   meaningless ones.
-- **ImageNet-1k contains no person class**, so classifying a person crop can only
-  ever return a garment or a backdrop — measured on device: "sarong" at 6%. The
-  refine step therefore skips `person` outright and drops anything under
-  `MIN_REFINED_SCORE`; a wrong confident-looking name is worse than no name.
+- **A single-class detector deletes more than it adds.** Switching from COCO's
+  80 classes to face-only removed the class filter, the second box colour and
+  the whole ImageNet refine step — about 1,650 lines and an 11MB asset — because
+  each existed only to tell classes apart. The refine step was a poor fit
+  regardless: ImageNet-1k has no person class, so naming a face crop could only
+  ever return a garment or a backdrop (measured on device: "sarong" at 6%).
 - **Never write a Reanimated shared value in a render body.** Strict mode warns
   about it, and the fix is always an effect keyed on the prop that drives the
   animation. Reading `.value` during render counts too.
@@ -574,11 +566,11 @@ ObjectDetector/
   threshold. Everything above the floor is shipped to JS so the slider can reveal
   detections after the fact; the floor must stay below the slider's minimum
   (`0.2`).
-- **One threshold for every class.** Lowering it for non-`person` classes was
-  tried — they do score lower at equal detection quality — and removed: a slider
-  reading 90% that still showed a 73% object made the number on screen a lie. The
-  default is `0.5` rather than the `0.6` from when this only counted people, since
-  `0.6` was tuned for `person` specifically.
+- **One threshold, no per-class exceptions.** Back when there were 80 classes,
+  lowering the bar for non-`person` ones was tried — they do score lower at
+  equal detection quality — and removed: a slider reading 90% that still showed
+  a 73% object made the number on screen a lie. `passesThreshold` stays
+  class-blind, and `__tests__/detections.test.js` still pins that.
 - **Jest must transform the native packages.** The whole reanimated, worklets,
   skia, vision-camera, nitro, blur and camera-roll group ships ESM; see
   `transformIgnorePatterns` in [jest.config.js](jest.config.js) (note the pattern

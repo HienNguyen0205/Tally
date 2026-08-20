@@ -44,30 +44,17 @@ export const en: InflectedCatalog = {
   scanningProgress: 'SCANNING %{done}/%{total}',
   scanFailed: 'Could not scan the photo',
 
-  // Bare units - the number is rendered separately, so it is absent here.
-  people: { one: 'person', other: 'people' },
-  objects: { one: 'object', other: 'objects' },
+  // `faceName` is a bare unit - the number is rendered separately, so it is
+  // absent here. `faceCount` carries both.
+  faceName: { one: 'face', other: 'faces' },
+  faceCount: { one: '%{count} face', other: '%{count} faces' },
 
-  classCount: { one: '%{count} class', other: '%{count} classes' },
-  classCountPartial: {
-    one: '%{shown}/%{count} class',
-    other: '%{shown}/%{count} classes',
-  },
-  classChip: {
-    one: '%{name}, %{count} object',
-    other: '%{name}, %{count} objects',
-  },
-  classChipHint: 'Show or hide this class on the image',
-  expandFilter: 'Open the class filter',
-  collapseFilter: 'Collapse the class filter',
-
-  boxLabel: '%{name}, %{percent} percent confidence',
-  boxHint: 'Open the detail sheet for this object',
-  identifying: 'identifying…',
+  boxLabel: 'Face, %{percent} percent confidence',
+  boxHint: 'Open the detail sheet for this face',
 
   thresholdLabel: 'Confidence threshold',
   thresholdHint:
-    'Swipe up or down to change the minimum confidence an object needs to show',
+    'Swipe up or down to change the minimum confidence a face needs to show',
   percent: '%{n} percent',
 
   saving: 'Saving…',
@@ -93,7 +80,7 @@ export const en: InflectedCatalog = {
   historyTitle: 'History',
   historyEmpty:
     'No scans saved yet.\nEvery capture and every scanned photo shows up here.',
-  nothingFound: 'No objects found',
+  nothingFound: 'No faces found',
   removeScan: 'Delete this scan',
   selectScans: 'Select several scans',
   cancelSelect: 'Cancel',
@@ -110,8 +97,8 @@ export const en: InflectedCatalog = {
   settingsTitle: 'Settings',
   languageSection: 'LANGUAGE',
   detectionSection: 'DETECTION',
-  hapticsLabel: 'Vibrate when people are detected',
-  hapticsHint: 'Turn the vibration alert on or off for scans that find people',
+  hapticsLabel: 'Vibrate when faces are detected',
+  hapticsHint: 'Turn the vibration alert on or off for scans that find faces',
   defaultThresholdLabel: 'Default confidence threshold',
   defaultThresholdHint:
     "Used every time the app opens - does not change the scan you're viewing",
@@ -156,15 +143,11 @@ export const en: InflectedCatalog = {
     one: 'Just scanned %{count} photo',
     other: 'Just scanned %{count} photos',
   },
-  batchTotal: '%{people}, %{total} in total',
-  peopleCount: { one: '%{count} person', other: '%{count} people' },
-  objectCount: { one: '%{count} object', other: '%{count} objects' },
-  countOf: '%{count} %{name}',
 
   loadOlder: 'Show older scans',
 
   weekTitle: 'Last %{days} days',
-  weekTotal: '%{scans} · %{people} · %{total}',
+  weekTotal: '%{scans} · %{faces}',
 
   today: 'Today',
   yesterday: 'Yesterday',

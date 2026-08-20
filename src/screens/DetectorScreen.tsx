@@ -35,11 +35,7 @@ import { useResizer } from 'react-native-vision-camera-resizer';
 import { createSynchronizable, scheduleOnRN } from 'react-native-worklets';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import {
-  PERSON_CLASS_ID,
-  MODEL_SIZE,
-  NMS_IOU,
-} from '../shared/constants';
+import { MODEL_SIZE, NMS_IOU } from '../shared/constants';
 import { boxToScreen, toFrameBox } from '../shared/boxLayout';
 import {
   mergeDetections,
@@ -53,8 +49,6 @@ import { makePreview, makeThumbnail } from '../shared/thumbnail';
 import { useAlert } from '../hooks/useAlert';
 import { useSavePhoto } from '../hooks/useSavePhoto';
 import { useCameraControls } from '../hooks/useCameraControls';
-import { useClassFilter } from '../hooks/useClassFilter';
-import { useRefinedLabel } from '../hooks/useRefinedLabel';
 import { useScanHistory } from '../hooks/useScanHistory';
 import type { useSettings } from '../hooks/useSettings';
 import { ResultIsland } from '../components/ResultIsland';
@@ -70,7 +64,6 @@ import { LaunchScreen } from '../components/LaunchScreen';
 import { DetailSheet } from '../components/DetailSheet';
 import { useDialog } from '../components/Dialog';
 import { DetectionBox } from '../components/DetectionBox';
-import { ClassFilter } from '../components/ClassFilter';
 import { HistorySheet } from '../components/HistorySheet';
 import { PhotoPicker, loadImageData } from '../components/PhotoPicker';
 import { SettingsScreen } from './SettingsScreen';
@@ -207,8 +200,14 @@ export function DetectorScreen({ settings, guest, onLeaveGuest }: Props) {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const cam = useCameraControls();
-  const { hidden, visible, counts, toggle, reset: resetFilter } =
-    useClassFilter(result, threshold);
+
+  // Was useClassFilter, which also tracked which of the detector's 80 classes
+  // were hidden. A single-class detector leaves only the threshold to filter
+  // on, and that is one line.
+  const visible = useMemo(
+    () => (result ?? []).filter(d => passesThreshold(d, threshold)),
+    [result, threshold],
+  );
 
   const { state: saveState, save, reset: resetSave } = useSavePhoto();
   const {
@@ -296,29 +295,11 @@ export function DetectorScreen({ settings, guest, onLeaveGuest }: Props) {
     ? CPU_ONLY
     : PREFERRED_DELEGATES;
   const objectDetection = useTensorflowModel(
-    require('../../assets/models/yolo26n.tflite'),
+    require('../../assets/models/widerfaceyolo26.tflite'),
     delegates,
   );
   const model =
     objectDetection.state === 'loaded' ? objectDetection.model : undefined;
-
-  // The classifier is only used when a box is tapped, so a failure costs just
-  // the refined name - don't let it block the whole app like the detector does.
-  const classifier = useTensorflowModel(
-    require('../../assets/models/yolo26n-cls.tflite'),
-    delegates,
-  );
-  const clsModel =
-    classifier.state === 'loaded' ? classifier.model : undefined;
-
-  const { refined, refining } = useRefinedLabel({
-    picked,
-    result,
-    clsModel,
-    frameSize,
-    photo,
-    camera: cam.camera,
-  });
 
   // The tensor shapes/types the runtime actually sees - check these against
   // assets/models/README.md whenever the model changes, because getting it
@@ -381,10 +362,8 @@ export function DetectorScreen({ settings, guest, onLeaveGuest }: Props) {
       setFrameSize({ w: frameW, h: frameH });
       setMode('frozen'); // stop the camera now, hold exactly the scanned frame
 
-      const people = merged.filter(
-        d => d.classId === PERSON_CLASS_ID && passesThreshold(d, threshold),
-      ).length;
-      if (people > 0) onAlert();
+      const faces = merged.filter(d => passesThreshold(d, threshold)).length;
+      if (faces > 0) onAlert();
     },
     [onAlert, threshold],
   );
@@ -405,13 +384,12 @@ export function DetectorScreen({ settings, guest, onLeaveGuest }: Props) {
 
       setScanBusy(true);
       setResult(null);
-      resetFilter();
       setPicked(null);
       resetSave();
       setMode('frozen');
 
       const ids: string[] = [];
-      let people = 0;
+      let faces = 0;
 
       try {
         for (const [i, uri] of uris.entries()) {
@@ -444,7 +422,7 @@ export function DetectorScreen({ settings, guest, onLeaveGuest }: Props) {
           setResult(found);
 
           const kept = found.filter(d => passesThreshold(d, threshold));
-          people += kept.filter(d => d.classId === PERSON_CLASS_ID).length;
+          faces += kept.length;
 
           const id = recordScan(kept, image);
           ids.push(id);
@@ -452,7 +430,7 @@ export function DetectorScreen({ settings, guest, onLeaveGuest }: Props) {
           recorded.current = found;
         }
 
-        if (people > 0) onAlert();
+        if (faces > 0) onAlert();
         // One photo stays on screen as before. A batch has nothing useful left
         // showing - only the last image - so hand over to the sheet that can
         // show every result at once.
@@ -473,7 +451,7 @@ export function DetectorScreen({ settings, guest, onLeaveGuest }: Props) {
         setScanning(false);
       }
     },
-    [model, threshold, onAlert, resetSave, resetFilter, recordScan, showDialog],
+    [model, threshold, onAlert, resetSave, recordScan, showDialog],
   );
 
   // Let the scan animation run on a little so the feedback registers. Skipped
@@ -484,14 +462,15 @@ export function DetectorScreen({ settings, guest, onLeaveGuest }: Props) {
     return () => clearTimeout(timer);
   }, [scanning, scanBusy]);
 
-  // If the box whose details are open gets hidden, the sheet has to close with
+  // If the box whose details are open drops below the threshold, the sheet has
+  // to close with
   // it, or it points at something no longer on screen.
   useEffect(() => {
     if (picked == null) return;
-    if (!passesThreshold(picked, threshold) || hidden.has(picked.classId)) {
+    if (!passesThreshold(picked, threshold)) {
       setPicked(null);
     }
-  }, [picked, threshold, hidden]);
+  }, [picked, threshold]);
 
   // Logs a camera capture once it has settled. A batch writes its own entries
   // as it goes and marks `recorded`, so this only ever fires for the shutter.
@@ -551,9 +530,7 @@ export function DetectorScreen({ settings, guest, onLeaveGuest }: Props) {
     );
   }
 
-  const peopleCount = visible.filter(
-    d => d.classId === PERSON_CLASS_ID,
-  ).length;
+  const faceCount = visible.length;
 
   const zoomSteps = ZOOM_STEPS.filter(z => z <= device.maxZoom);
 
@@ -706,8 +683,6 @@ export function DetectorScreen({ settings, guest, onLeaveGuest }: Props) {
           <DetailSheet
             classId={picked.classId}
             score={picked.score}
-            refined={refined}
-            refining={refining}
             onClose={() => setPicked(null)}
           />
         </View>
@@ -726,8 +701,7 @@ export function DetectorScreen({ settings, guest, onLeaveGuest }: Props) {
       {(result != null || session != null) && (
         <ResultIsland
           top={resultTop}
-          peopleCount={peopleCount}
-          objectCount={visible.length}
+          faceCount={faceCount}
           session={sessionTotal}
         />
       )}
@@ -762,10 +736,6 @@ export function DetectorScreen({ settings, guest, onLeaveGuest }: Props) {
             reviewing && !landscape && styles.toolsReviewPortrait,
           ]}
         >
-          {reviewing && (
-            <ClassFilter counts={counts} hidden={hidden} onToggle={toggle} />
-          )}
-
           {/* The two modes want different controls, and showing both at once
               stretched the pill across the whole screen. Capture gets the camera
               buttons; review gets the threshold, which is the only thing that
@@ -832,8 +802,7 @@ export function DetectorScreen({ settings, guest, onLeaveGuest }: Props) {
               setResult(null);
               setPicked(null);
               setPhoto(null);
-              resetFilter();
-              resetSave();
+                      resetSave();
               setMode('idle');
             }}
             onSave={() => {

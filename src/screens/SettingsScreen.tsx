@@ -44,14 +44,26 @@ function Section({
 function Row({
   label,
   hint,
+  stacked = false,
   children,
 }: {
   label: string;
   hint?: string;
+  /**
+   * Put the control on its own line under the text instead of beside it.
+   *
+   * For a `Switch` the side-by-side layout is right - it is narrow, and the
+   * text keeps almost the whole row. A slider is not: ThresholdSlider is a
+   * fixed ~170dp wide, which on a 393dp screen leaves the text column under
+   * 150dp once the card padding and gap come out. Measured on device, that
+   * wrapped "Ngưỡng tin cậy mặc định" onto two lines and its hint onto five,
+   * and it gets worse at larger system font scales.
+   */
+  stacked?: boolean;
   children: ReactNode;
 }) {
   return (
-    <View style={styles.row}>
+    <View style={stacked ? styles.rowStacked : styles.row}>
       <View style={styles.rowText}>
         <Text style={styles.rowLabel}>{label}</Text>
         {hint != null && <Text style={styles.rowHint}>{hint}</Text>}
@@ -172,10 +184,15 @@ export function SettingsScreen({
               />
             </Row>
             <View style={styles.divider} />
-            <Row label={t('defaultThresholdLabel')} hint={t('defaultThresholdHint')}>
+            <Row
+              label={t('defaultThresholdLabel')}
+              hint={t('defaultThresholdHint')}
+              stacked
+            >
               <ThresholdSlider
                 showIcon={false}
                 live={false}
+                fill
                 value={settings.defaultThreshold}
                 onChange={v => settings.update({ defaultThreshold: v })}
               />
@@ -271,6 +288,10 @@ const styles = StyleSheet.create({
   },
 
   row: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  // No flexDirection: the column default is the point - see Row's `stacked`.
+  // The slider carries its own 12dp inset, so it lines up close enough to the
+  // text above it without a margin here.
+  rowStacked: { gap: 8 },
   rowText: { flex: 1, gap: 3 },
   rowLabel: {
     color: COLORS.textPrimary,

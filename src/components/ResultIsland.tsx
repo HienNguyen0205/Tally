@@ -16,10 +16,9 @@ interface Props {
   /** Screen-space top offset, in px - DetectorScreen computes this from the
    *  safe area inset plus the header pill above, so the two never overlap. */
   top: number;
-  peopleCount: number;
-  objectCount: number;
+  faceCount: number;
   /** Running total while captures are being added up; null when off. */
-  session?: { people: number; total: number; photos: number } | null;
+  session?: { faces: number; photos: number } | null;
 }
 
 const ease = Easing.bezier(...EASE_OUT_EXPO);
@@ -29,12 +28,7 @@ const ease = Easing.bezier(...EASE_OUT_EXPO);
  * is a result - before a scan there is nothing to say, and the viewfinder
  * deserves the space more than a hint line does.
  */
-export function ResultIsland({
-  top,
-  peopleCount,
-  objectCount,
-  session = null,
-}: Props) {
+export function ResultIsland({ top, faceCount, session = null }: Props) {
   const { width, height } = useWindowDimensions();
   // Landscape: shift left to clear the shutter, which has moved to the right.
   const landscape = width > height;
@@ -50,7 +44,7 @@ export function ResultIsland({
       140,
       withTiming(1, { duration: 720, easing: ease }),
     );
-  }, [peopleCount, objectCount, reveal, stagger]);
+  }, [faceCount, reveal, stagger]);
 
   // Animate transform/opacity only - leave width/height alone to avoid reflow.
   const shellStyle = useAnimatedStyle(() => ({
@@ -66,7 +60,7 @@ export function ResultIsland({
     transform: [{ translateY: 12 * (1 - stagger.value) }],
   }));
 
-  const present = peopleCount > 0;
+  const present = faceCount > 0;
 
   return (
     <View
@@ -81,14 +75,13 @@ export function ResultIsland({
               { backgroundColor: present ? COLORS.accent : COLORS.textFaint },
             ]}
           />
-          <Text style={styles.count}>{peopleCount}</Text>
-          <Text style={styles.unit}>{t('people', { count: peopleCount })}</Text>
-
+          {/* One figure, not two. The second block used to carry the object
+              total beside the person count; a single-class detector makes
+              those the same number, and showing it twice reads as a bug. */}
           <Animated.View style={[styles.tail, staggerStyle]}>
-            <View style={styles.dividerV} />
-            <Text style={styles.objects}>{objectCount}</Text>
-            <Text style={styles.unit}>{t('objects', { count: objectCount })}</Text>
+            <Text style={styles.count}>{faceCount}</Text>
           </Animated.View>
+          <Text style={styles.unit}>{t('faceName', { count: faceCount })}</Text>
         </GlassSurface>
 
         {/* The running total gets its own pill rather than another row inside
@@ -97,11 +90,8 @@ export function ResultIsland({
         {session != null && (
           <GlassSurface pill contentStyle={styles.sumPill}>
             <Text style={styles.sumLabel}>{t('sumTotal')}</Text>
-            <Text style={styles.sumCount}>{session.people}</Text>
-            <Text style={styles.unit}>{t('people', { count: session.people })}</Text>
-            <View style={styles.dividerV} />
-            <Text style={styles.sumCount}>{session.total}</Text>
-            <Text style={styles.unit}>{t('objects', { count: session.total })}</Text>
+            <Text style={styles.sumCount}>{session.faces}</Text>
+            <Text style={styles.unit}>{t('faceName', { count: session.faces })}</Text>
             <View style={styles.dividerV} />
             <Text style={styles.unit}>
               {t('sumPhotos', { count: session.photos })}

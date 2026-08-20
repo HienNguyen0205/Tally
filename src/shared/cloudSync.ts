@@ -1,6 +1,7 @@
 import { decode } from 'base64-arraybuffer';
 
 import { getUserId, supabase } from './supabase';
+import { FACE_CLASS_ID } from './constants';
 import type { ScanRecord } from './history';
 
 const BUCKET = 'scans';
@@ -45,9 +46,14 @@ export async function uploadScan(
     id: record.id,
     user_id: userId,
     at: new Date(record.at).toISOString(),
-    people: record.people,
-    total: record.total,
-    counts: record.counts,
+    // The table still has the three columns the COCO detector wrote, and the
+    // app now carries one number. Filling all three from `faces` keeps every
+    // row already in Supabase readable and needs no migration run against a
+    // live database - the alternative is a schema change that breaks the
+    // moment one device is still on the old build.
+    people: record.faces,
+    total: record.faces,
+    counts: [{ classId: FACE_CLASS_ID, count: record.faces }],
   });
   if (upsertError != null) {
     console.warn('[cloudSync] could not upload scan row', upsertError);
@@ -181,7 +187,7 @@ async function fetchPage(
 ): Promise<ScanRecord[]> {
   const { data, error } = await supabase
     .from('scans')
-    .select('id, at, people, total, counts')
+    .select('id, at, total')
     .eq('user_id', userId)
     .order('at', { ascending: false })
     .range(offset, offset + limit - 1);
@@ -199,9 +205,11 @@ async function fetchPage(
       return {
         id: row.id,
         at: new Date(row.at).getTime(),
-        people: row.people,
-        total: row.total,
-        counts: row.counts,
+        // `total` rather than `people`: for a row this build wrote the two are
+        // equal, and for one the COCO build wrote `total` was the box count -
+        // the same thing `faces` means - while `people` was only its person
+        // subset. Same reasoning as parseHistory's fallback.
+        faces: row.total,
         thumbnail,
       };
     }),

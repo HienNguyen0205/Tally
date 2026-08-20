@@ -9,58 +9,48 @@ const {
   totalOf,
   weekTotals,
 } = require('../src/shared/history');
-const { PERSON_CLASS_ID } = require('../src/shared/constants');
+const { FACE_CLASS_ID } = require('../src/shared/constants');
 const { t } = require('../src/i18n');
 
-const BOAT = 8;
-
-function det(classId, score = 0.9) {
-  return { xmin: 0, ymin: 0, xmax: 1, ymax: 1, score, classId };
+function det(score = 0.9) {
+  return {
+    xmin: 0,
+    ymin: 0,
+    xmax: 1,
+    ymax: 1,
+    score,
+    classId: FACE_CLASS_ID,
+  };
 }
 
 function rec(id, at = 0) {
-  return { id, at, thumbnail: '', people: 0, total: 0, counts: [] };
+  return { id, at, thumbnail: '', faces: 0 };
 }
 
 describe('summarise', () => {
-  it('counts people separately from the total', () => {
-    const s = summarise([
-      det(PERSON_CLASS_ID),
-      det(PERSON_CLASS_ID),
-      det(BOAT),
-    ]);
-    expect(s.people).toBe(2);
-    expect(s.total).toBe(3);
-  });
-
-  it('groups by class, most common first', () => {
-    const s = summarise([det(BOAT), det(PERSON_CLASS_ID), det(BOAT)]);
-    expect(s.counts).toEqual([
-      { classId: BOAT, count: 2 },
-      { classId: PERSON_CLASS_ID, count: 1 },
-    ]);
+  it('counts the boxes on screen', () => {
+    expect(summarise([det(), det(), det()])).toEqual({ faces: 3 });
   });
 
   it('handles a scan that found nothing', () => {
-    expect(summarise([])).toEqual({ people: 0, total: 0, counts: [] });
+    expect(summarise([])).toEqual({ faces: 0 });
   });
 });
 
 describe('totalOf', () => {
-  function counted(id, people, total) {
-    return { id, at: 0, thumbnail: '', people, total, counts: [] };
+  function counted(id, faces) {
+    return { id, at: 0, thumbnail: '', faces };
   }
 
   it('adds up a batch', () => {
-    expect(totalOf([counted('a', 2, 5), counted('b', 1, 3)])).toEqual({
-      people: 3,
-      total: 8,
+    expect(totalOf([counted('a', 5), counted('b', 3)])).toEqual({
+      faces: 8,
       photos: 2,
     });
   });
 
   it('is all zeroes for an empty batch', () => {
-    expect(totalOf([])).toEqual({ people: 0, total: 0, photos: 0 });
+    expect(totalOf([])).toEqual({ faces: 0, photos: 0 });
   });
 });
 
@@ -121,6 +111,35 @@ describe('parseHistory', () => {
     const built = addRecord([], rec('a', 123));
     expect(parseHistory(JSON.stringify(built))).toEqual(built);
   });
+
+  // Records written by the COCO build carry people/total/counts and no
+  // `faces`. Reading `total` as the face count keeps that history visible
+  // instead of silently dropping every scan the user remembers taking - the
+  // alternative when the record shape changed under them.
+  it('reads a record written before the face detector', () => {
+    const legacy = {
+      id: 'old',
+      at: 123,
+      thumbnail: '',
+      people: 2,
+      total: 5,
+      counts: [{ classId: 0, count: 2 }],
+    };
+
+    expect(parseHistory(JSON.stringify([legacy]))).toEqual([
+      { id: 'old', at: 123, thumbnail: '', faces: 5 },
+    ]);
+  });
+
+  it('prefers `faces` over `total` when both are present', () => {
+    const both = { id: 'x', at: 1, thumbnail: '', faces: 4, total: 9 };
+    expect(parseHistory(JSON.stringify([both]))[0].faces).toBe(4);
+  });
+
+  it('drops a record carrying neither count', () => {
+    const neither = { id: 'x', at: 1, thumbnail: '' };
+    expect(parseHistory(JSON.stringify([neither]))).toEqual([]);
+  });
 });
 
 // Asserted against `t` rather than literal text: the wording depends on the
@@ -180,14 +199,14 @@ describe('groupByDay', () => {
 describe('weekTotals', () => {
   const now = ts(2026, 8, 18, 10, 0);
 
-  function scan(at, people, total) {
-    return { id: String(at), at, thumbnail: '', people, total, counts: [] };
+  function scan(at, faces) {
+    return { id: String(at), at, thumbnail: '', faces };
   }
 
   it('adds up every scan inside the window', () => {
     expect(
-      weekTotals([scan(ts(2026, 8, 18, 9), 3, 5), scan(ts(2026, 8, 16, 9), 2, 4)], now),
-    ).toEqual({ people: 5, total: 9, photos: 2 });
+      weekTotals([scan(ts(2026, 8, 18, 9), 3), scan(ts(2026, 8, 16, 9), 2)], now),
+    ).toEqual({ faces: 5, photos: 2 });
   });
 
   // The window is a rolling WEEK_DAYS ending today, so the oldest day it can
@@ -196,22 +215,20 @@ describe('weekTotals', () => {
     const oldest = ts(2026, 8, 18 - (WEEK_DAYS - 1), 0, 1);
     const tooOld = ts(2026, 8, 18 - WEEK_DAYS, 23, 59);
 
-    expect(weekTotals([scan(oldest, 1, 1)], now).photos).toBe(1);
-    expect(weekTotals([scan(tooOld, 1, 1)], now).photos).toBe(0);
+    expect(weekTotals([scan(oldest, 1)], now).photos).toBe(1);
+    expect(weekTotals([scan(tooOld, 1)], now).photos).toBe(0);
   });
 
   it('counts from local midnight, so a scan earlier today is always in', () => {
-    expect(weekTotals([scan(ts(2026, 8, 18, 0, 1), 7, 7)], now)).toEqual({
-      people: 7,
-      total: 7,
+    expect(weekTotals([scan(ts(2026, 8, 18, 0, 1), 7)], now)).toEqual({
+      faces: 7,
       photos: 1,
     });
   });
 
   it('is empty when nothing is recent', () => {
-    expect(weekTotals([scan(ts(2026, 1, 1), 9, 9)], now)).toEqual({
-      people: 0,
-      total: 0,
+    expect(weekTotals([scan(ts(2026, 1, 1), 9)], now)).toEqual({
+      faces: 0,
       photos: 0,
     });
   });

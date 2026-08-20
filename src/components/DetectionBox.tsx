@@ -2,8 +2,6 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { COLORS, FONT } from '../shared/theme';
-import { PERSON_CLASS_ID } from '../shared/constants';
-import { label } from '../shared/labels';
 import { t } from '../i18n';
 import type { Detection } from '../shared/detections';
 import type { ScreenRect } from '../shared/boxLayout';
@@ -27,10 +25,11 @@ export function DetectionBox({
   selected: boolean;
   onPress: () => void;
 }) {
-  const isPerson = detection.classId === PERSON_CLASS_ID;
-  const color = isPerson ? COLORS.accent : COLORS.warn;
+  // One colour, because there is one class. The old green/amber split marked
+  // people apart from everything else; with a face detector every box is the
+  // thing being counted.
+  const color = COLORS.accent;
   const percent = Math.round(detection.score * 100);
-  const name = label(detection.classId);
 
   // The label sits above the box; if the box hugs the top of the screen, flip it
   // down inside instead.
@@ -52,7 +51,7 @@ export function DetectionBox({
       accessibilityRole="button"
       // The label names the thing; what happens on activation belongs in the
       // hint, which a screen reader reads separately and users can switch off.
-      accessibilityLabel={t('boxLabel', { name, percent })}
+      accessibilityLabel={t('boxLabel', { percent })}
       accessibilityHint={t('boxHint')}
       onPress={onPress}
     >
@@ -63,8 +62,12 @@ export function DetectionBox({
           chipAbove ? styles.chipAbove : styles.chipInside,
         ]}
       >
+        {/* Just the score: the class name was worth the pixels when it could
+            be any of 80 things, but "face 87%" on every box of a face
+            detector spends half the chip saying what the whole screen
+            already says. */}
         <Text style={styles.chipText} numberOfLines={1}>
-          {name} {percent}%
+          {percent}%
         </Text>
       </View>
     </Pressable>

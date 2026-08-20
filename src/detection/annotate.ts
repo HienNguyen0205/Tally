@@ -7,12 +7,11 @@ import {
 } from '@shopify/react-native-skia';
 
 import { boxToScreen } from '../shared/boxLayout';
-import { PERSON_CLASS_ID } from '../shared/constants';
 import type { Detection } from '../shared/detections';
-import { label } from '../shared/labels';
 
-const PERSON_COLOR = '#00E676'; // people - green
-const OBJECT_COLOR = '#FFC400'; // other objects - amber
+// One colour, matching COLORS.accent and the on-screen box. The amber second
+// colour went with the class split - see DetectionBox.
+const FACE_COLOR = '#00E676';
 
 function makePaint(color: string, style: PaintStyle, strokeWidth = 0) {
   const paint = Skia.Paint();
@@ -22,11 +21,9 @@ function makePaint(color: string, style: PaintStyle, strokeWidth = 0) {
   return paint;
 }
 
-const personPaint = makePaint(PERSON_COLOR, PaintStyle.Stroke, 4);
-const objectPaint = makePaint(OBJECT_COLOR, PaintStyle.Stroke, 4);
+const facePaint = makePaint(FACE_COLOR, PaintStyle.Stroke, 4);
 // Solid label backing in the box colour, black text on top for legibility.
-const personFill = makePaint(PERSON_COLOR, PaintStyle.Fill);
-const objectFill = makePaint(OBJECT_COLOR, PaintStyle.Fill);
+const faceFill = makePaint(FACE_COLOR, PaintStyle.Fill);
 const textPaint = makePaint('#000000', PaintStyle.Fill);
 
 // This must name a family that actually exists on the device. 'System',
@@ -75,20 +72,17 @@ export function annotate(
   const chipH = fontSize * 1.5;
 
   for (const d of detections) {
-    const isPerson = d.classId === PERSON_CLASS_ID;
     const r = boxToScreen(d, frameW, frameH, w, h);
 
     canvas.drawRect(
       Skia.XYWHRect(r.left, r.top, r.width, r.height),
-      isPerson ? personPaint : objectPaint,
+      facePaint,
     );
 
-    // The same localised name the HUD shows, so a saved image and the screen
-    // cannot disagree about what was found. Only the casing differs - the chip
-    // on screen is styled with textTransform, which Skia has no equivalent of
-    // and which is not worth reimplementing here.
-    const name = label(d.classId);
-    const text = `${name} ${Math.round(d.score * 100)}%`;
+    // Score only, matching the on-screen chip (see DetectionBox) - a saved
+    // image and the screen must not disagree about what was found, and with
+    // one class the name says nothing the picture does not.
+    const text = `${Math.round(d.score * 100)}%`;
     const textW = labelFont.measureText(text).width;
 
     // The label sits above the box; if the box hugs the top edge, flip it
@@ -96,7 +90,7 @@ export function annotate(
     const chipY = r.top - chipH >= 0 ? r.top - chipH : r.top;
     canvas.drawRect(
       Skia.XYWHRect(r.left, chipY, textW + padX * 2, chipH),
-      isPerson ? personFill : objectFill,
+      faceFill,
     );
     canvas.drawText(
       text,

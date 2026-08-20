@@ -18,12 +18,12 @@ test('setLocale switches t() output and the live `locale` binding other modules 
   i18n.setLocale('en');
   expect(i18n.t('close')).toBe('Close');
   expect(i18n.locale).toBe('en');
-  expect(labelForCount(0, 3)).toBe('people'); // labels.ts imports `locale` live
+  expect(labelForCount(0, 3)).toBe('faces'); // labels.ts imports `locale` live
 
   i18n.setLocale('vi');
   expect(i18n.t('close')).toBe('Đóng');
   expect(i18n.locale).toBe('vi');
-  expect(labelForCount(0, 3)).toBe('người');
+  expect(labelForCount(0, 3)).toBe('khuôn mặt');
 });
 
 test('applies a locale saved in an earlier session, at module load', () => {

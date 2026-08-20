@@ -1,5 +1,11 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { PanResponder, StyleSheet, Text, View } from 'react-native';
+import {
+  PanResponder,
+  StyleSheet,
+  Text,
+  View,
+  type LayoutChangeEvent,
+} from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -11,6 +17,7 @@ import { COLORS, EASE_OUT_EXPO, FONT } from '../shared/theme';
 import { t } from '../i18n';
 import { Icon } from './icons';
 
+/** Track width when the slider sizes itself - see the `fill` prop. */
 const TRACK_W = 104;
 const KNOB = 18;
 const MIN = 0.2;
@@ -39,6 +46,20 @@ interface Props {
    * the JS thread, which is what stops the knob keeping up with the finger.
    */
   live?: boolean;
+  /**
+   * Stretch the track across whatever width the parent gives, instead of the
+   * fixed TRACK_W.
+   *
+   * For the tool pill in DetectorScreen the fixed width is right - it sits in
+   * a row of buttons that must stay intrinsically sized. SettingsScreen's row
+   * is a full-width column (see `stacked` there), where 104dp leaves the track
+   * marooned in a third of the row and gives the 0.2..0.9 range only ~86dp of
+   * travel, about 1.2dp per percentage point.
+   *
+   * The width is measured rather than passed in: a number picked to fill a
+   * 393dp screen would overflow a 320dp one, and it has to survive rotation.
+   */
+  fill?: boolean;
 }
 
 /**
@@ -58,9 +79,30 @@ export function ThresholdSlider({
   onChange,
   showIcon = true,
   live = true,
+  fill = false,
 }: Props) {
-  const travel = TRACK_W - KNOB;
   const progress = useSharedValue(toProgress(value));
+
+  // How far the knob can move: the track's own width less the knob, so the
+  // knob's right edge stops at the track's. Two copies on purpose - a shared
+  // value the knob's animated style can react to on the UI thread, and a ref
+  // the pan handlers read on the JS thread. Neither is state: re-rendering on
+  // layout would be pointless, and putting it in `pan`'s deps would rebuild
+  // the PanResponder, which is exactly the stutter fixed earlier.
+  const travelSV = useSharedValue(TRACK_W - KNOB);
+  const travel = useRef(TRACK_W - KNOB);
+
+  const onTrackLayout = useCallback(
+    (e: LayoutChangeEvent) => {
+      if (!fill) return;
+      // Never zero: a zero divisor in onPanResponderMove turns every drag into
+      // Infinity and pins the knob to one end.
+      const next = Math.max(1, e.nativeEvent.layout.width - KNOB);
+      travel.current = next;
+      travelSV.value = next;
+    },
+    [fill, travelSV],
+  );
   // The value at drag start, so finger travel accumulates onto it. Derived from
   // the prop rather than read off progress.value: a useRef argument evaluates on
   // every render, and reading a shared value mid-render is exactly what
@@ -113,7 +155,7 @@ export function ThresholdSlider({
           grabbed.value = withTiming(1, { duration: 160, easing: ease });
         },
         onPanResponderMove: (_, g) => {
-          const next = clamp(startProgress.current + g.dx / travel);
+          const next = clamp(startProgress.current + g.dx / travel.current);
           progress.value = next;
           const pct = Math.round((MIN + next * (MAX - MIN)) * 100);
           setPercent(pct);
@@ -132,12 +174,12 @@ export function ThresholdSlider({
           commitPending();
         },
       }),
-    [grabbed, progress, travel, live, commitPending],
+    [grabbed, progress, live, commitPending],
   );
 
   const knobStyle = useAnimatedStyle(() => ({
     transform: [
-      { translateX: progress.value * travel },
+      { translateX: progress.value * travelSV.value },
       { scale: 1 + 0.25 * grabbed.value },
     ],
   }));
@@ -188,7 +230,10 @@ export function ThresholdSlider({
         <Icon name="target" size={15} color={COLORS.textMuted} strokeWidth={1.5} />
       )}
 
-      <View style={styles.track}>
+      <View
+        style={[styles.track, fill ? styles.trackFill : styles.trackFixed]}
+        onLayout={onTrackLayout}
+      >
         <Animated.View style={[styles.fill, fillStyle]} />
         <Animated.View style={[styles.knob, knobStyle]} />
       </View>
@@ -207,12 +252,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   track: {
-    width: TRACK_W,
     height: 3,
     borderRadius: 2,
     backgroundColor: 'rgba(255,255,255,0.18)',
     justifyContent: 'center',
   },
+  trackFixed: { width: TRACK_W },
+  // The row is only as wide as the parent allows, so this takes what is left
+  // after the icon, the gap and the percentage readout.
+  trackFill: { flex: 1 },
   fill: {
     position: 'absolute',
     left: 0,

@@ -53,28 +53,21 @@ export const vi = {
   scanningProgress: 'ĐANG QUÉT %{done}/%{total}',
   scanFailed: 'Không quét được ảnh',
 
-  // Result island. These two are bare units: the number sits in its own Text
-  // beside them, at a different size, so it is not part of the string.
-  people: 'người',
-  objects: 'vật thể',
+  // The detector's one class. `faceName` is the bare noun - the number sits in
+  // its own Text beside it, at a different size, so it is not part of the
+  // string. `faceCount` is the two together, for running prose.
+  faceName: 'khuôn mặt',
+  faceCount: '%{count} khuôn mặt',
 
-  // Class filter
-  classCount: '%{count} loại',
-  classCountPartial: '%{shown}/%{count} loại',
-  classChip: '%{name}, %{count} vật thể',
-  classChipHint: 'Bật tắt hiển thị loại này trên ảnh',
-  expandFilter: 'Mở bộ lọc loại vật thể',
-  collapseFilter: 'Thu gọn bộ lọc loại vật thể',
-
-  // Detection box
-  boxLabel: '%{name}, độ tin cậy %{percent} phần trăm',
-  boxHint: 'Mở thẻ chi tiết của vật thể này',
-  identifying: 'đang nhận dạng…',
+  // Detection box. No name in the label: with one class it would say "khuôn
+  // mặt" on every single box.
+  boxLabel: 'Khuôn mặt, độ tin cậy %{percent} phần trăm',
+  boxHint: 'Mở thẻ chi tiết của khuôn mặt này',
 
   // Threshold slider
   thresholdLabel: 'Ngưỡng tin cậy',
   thresholdHint:
-    'Vuốt lên hoặc xuống để đổi mức tin cậy tối thiểu của vật thể được hiện',
+    'Vuốt lên hoặc xuống để đổi mức tin cậy tối thiểu của khuôn mặt được hiện',
   percent: '%{n} phần trăm',
 
   // Review bar
@@ -100,7 +93,7 @@ export const vi = {
   historyTitle: 'Lịch sử',
   historyEmpty:
     'Chưa có lần quét nào được lưu.\nMỗi lần chụp hoặc quét ảnh sẽ tự xuất hiện ở đây.',
-  nothingFound: 'Không tìm thấy vật thể nào',
+  nothingFound: 'Không tìm thấy khuôn mặt nào',
   removeScan: 'Xoá lần quét này',
   selectScans: 'Chọn nhiều lần quét',
   cancelSelect: 'Huỷ',
@@ -118,8 +111,8 @@ export const vi = {
   settingsTitle: 'Cài đặt',
   languageSection: 'NGÔN NGỮ',
   detectionSection: 'PHÁT HIỆN',
-  hapticsLabel: 'Rung khi phát hiện người',
-  hapticsHint: 'Bật hoặc tắt cảnh báo rung khi quét thấy người',
+  hapticsLabel: 'Rung khi phát hiện khuôn mặt',
+  hapticsHint: 'Bật hoặc tắt cảnh báo rung khi quét thấy khuôn mặt',
   defaultThresholdLabel: 'Ngưỡng tin cậy mặc định',
   defaultThresholdHint: 'Mức tin cậy dùng mỗi khi mở app, không ảnh hưởng lần quét đang xem',
   dataSection: 'DỮ LIỆU',
@@ -162,15 +155,11 @@ export const vi = {
 
   // Batch result.
   //
-  // `batchTotal` interpolates two already-rendered phrases rather than two
-  // numbers. It has two counts in one sentence, and i18n-js pluralises on a
-  // single `count` - so the only way each half can inflect is to render each
-  // half on its own first. That is what peopleCount/objectCount are for.
+  // `weekTotal` interpolates already-rendered phrases rather than numbers: it
+  // has two counts in one sentence, and i18n-js pluralises on a single
+  // `count`, so the only way each half can inflect is to render it on its own
+  // first. That is what faceCount and scanCount are for.
   batchTitle: 'Vừa quét %{count} ảnh',
-  batchTotal: 'Tổng cộng %{people} · %{total}',
-  peopleCount: '%{count} người',
-  objectCount: '%{count} vật thể',
-  countOf: '%{count} %{name}',
 
   // Paging older scans back down from the cloud, past the local cap.
   loadOlder: 'Xem các lần quét cũ hơn',
@@ -178,7 +167,7 @@ export const vi = {
   // Rolling summary above the history list. Same pre-rendered-halves trick as
   // `batchTotal` above, for the same reason - three counts, one `count`.
   weekTitle: '%{days} ngày qua',
-  weekTotal: '%{scans} · %{people} · %{total}',
+  weekTotal: '%{scans} · %{faces}',
 
   // Day headers
   today: 'Hôm nay',
@@ -201,16 +190,11 @@ export interface PluralForms {
 
 const PLURAL_KEY_LIST = [
   'zoomTimes',
-  'people',
-  'objects',
-  'classCount',
-  'classCountPartial',
-  'classChip',
+  'faceName',
+  'faceCount',
   'limitedNotice',
   'scanSelected',
   'batchTitle',
-  'peopleCount',
-  'objectCount',
   'sumPhotos',
   'scanCount',
 ] as const;
@@ -249,12 +233,9 @@ export type InflectedCatalog = {
 export interface Params extends Record<PluralKey, { count: number }> {
   zoomTimes: { count: number };
   scanningProgress: { done: number; total: number };
-  people: { count: number };
-  objects: { count: number };
-  classCount: { count: number };
-  classCountPartial: { shown: number; count: number };
-  classChip: { name: string; count: number };
-  boxLabel: { name: string; percent: number };
+  faceName: { count: number };
+  faceCount: { count: number };
+  boxLabel: { percent: number };
   percent: { n: number };
   limitedNotice: { count: number };
   scanSelected: { count: number };
@@ -262,19 +243,13 @@ export interface Params extends Record<PluralKey, { count: number }> {
   signOutConfirmBody: { email: string };
   confirmEmailSent: { email: string };
   batchTitle: { count: number };
-  /** Both halves are rendered strings, not numbers - see `batchTotal` above. */
-  batchTotal: { people: string; total: string };
-  peopleCount: { count: number };
-  objectCount: { count: number };
-  /** `name` must already be in the right grammatical number - see labels.ts. */
-  countOf: { count: number; name: string };
   sumPhotos: { count: number };
   scanCount: { count: number };
   /** Always WEEK_DAYS (history.ts), so it never needs to inflect. */
   weekTitle: { days: number };
-  /** All three are rendered strings - see `batchTotal` above. */
-  weekTotal: { scans: string; people: string; total: string };
-  /** Pre-rendered via `scanCount` - same reason `batchTotal` takes strings. */
+  /** Both are rendered strings - see `weekTotal` in the catalog above. */
+  weekTotal: { scans: string; faces: string };
+  /** Pre-rendered via `scanCount` - same reason `weekTotal` takes strings. */
   clearHistoryConfirmBody: { count: string };
   signedInAs: { email: string };
 }

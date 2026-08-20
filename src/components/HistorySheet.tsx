@@ -26,7 +26,6 @@ import {
   weekTotals,
   type ScanRecord,
 } from '../shared/history';
-import { labelForCount } from '../shared/labels';
 import { t } from '../i18n';
 import { toCsv } from '../shared/export';
 import { CloseIcon } from './modalIcons';
@@ -202,12 +201,10 @@ function SelectIcon({
  */
 const FADE_MS = 200;
 
-/** "3 người, 2 thuyền, 1 ghế" - the classes that were actually found. */
+/** "3 khuôn mặt", or the empty-scan message. */
 function breakdown(record: ScanRecord): string {
-  if (record.counts.length === 0) return t('nothingFound');
-  return record.counts
-    .map(c => t('countOf', { count: c.count, name: labelForCount(c.classId, c.count) }))
-    .join(', ');
+  if (record.faces === 0) return t('nothingFound');
+  return t('faceCount', { count: record.faces });
 }
 
 function Row({
@@ -373,10 +370,7 @@ function Viewer({
 
       <View style={[styles.viewerFoot, { paddingBottom: insets.bottom + 20 }]}>
         <Text style={styles.viewerTotals}>
-          {t('batchTotal', {
-            people: t('peopleCount', { count: record.people }),
-            total: t('objectCount', { count: record.total }),
-          })}
+          {t('faceCount', { count: record.faces })}
         </Text>
         {/* Not clamped to two lines like the row: this is the screen you open
             precisely because the row was too short to list everything. */}
@@ -611,10 +605,7 @@ export function HistorySheet({
                       {t('batchTitle', { count: summary.photos })}
                     </Text>
                     <Text style={styles.summaryLine}>
-                      {t('batchTotal', {
-                        people: t('peopleCount', { count: summary.people }),
-                        total: t('objectCount', { count: summary.total }),
-                      })}
+                      {t('faceCount', { count: summary.faces })}
                     </Text>
                   </View>
                 )}
@@ -632,8 +623,7 @@ export function HistorySheet({
                     <Text style={styles.weekLine}>
                       {t('weekTotal', {
                         scans: t('scanCount', { count: week.photos }),
-                        people: t('peopleCount', { count: week.people }),
-                        total: t('objectCount', { count: week.total }),
+                        faces: t('faceCount', { count: week.faces }),
                       })}
                     </Text>
                   </View>

@@ -9,34 +9,32 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { COLORS, EASE_OUT_EXPO, FONT } from '../shared/theme';
-import { COCO_LABELS, label } from '../shared/labels';
+import { label } from '../shared/labels';
 import { t } from '../i18n';
-import { PERSON_CLASS_ID } from '../shared/constants';
 import { GlassSurface } from './GlassSurface';
 import { Icon } from './icons';
 
 const ease = Easing.bezier(...EASE_OUT_EXPO);
 
 /**
- * Detail sheet for one object: its name, a more specific name where one can be
- * guessed, and the confidence.
+ * Detail sheet for one detection: what it is, and how sure the model is.
  *
  * A single row of three blocks: name - score pill - close. The score sits in a
- * pill tinted to the class colour rather than a label+number column, so it reads
- * both as the figure and as the thread tying this sheet to the box just tapped.
+ * tinted pill rather than a label+number column, so it reads both as the figure
+ * and as the thread tying this sheet to the box just tapped.
+ *
+ * The subline used to carry a finer name from a second, ImageNet classifier -
+ * "boat" became "gondola". That model went with the switch to a face detector:
+ * ImageNet has no person class at all, so refining a face crop could only ever
+ * return a garment or a backdrop.
  */
 export function DetailSheet({
   classId,
   score,
-  refined,
-  refining,
   onClose,
 }: {
   classId: number;
   score: number;
-  /** The classifier's guess, null when absent or not yet in. */
-  refined?: { label: string; score: number } | null;
-  refining?: boolean;
   onClose: () => void;
 }) {
   const reveal = useSharedValue(0);
@@ -62,34 +60,15 @@ export function DetailSheet({
     transform: [{ translateY: 10 * (1 - tail.value) }],
   }));
 
-  const accent = classId === PERSON_CLASS_ID ? COLORS.accent : COLORS.warn;
-  const en = COCO_LABELS[classId] ?? `#${classId}`;
-  const name = label(classId);
+  const accent = COLORS.accent;
 
   return (
     <Animated.View style={sheetStyle}>
       <GlassSurface pill contentStyle={styles.core}>
         <View style={styles.textCol}>
           <Text style={styles.title} numberOfLines={1}>
-            {name}
+            {label(classId)}
           </Text>
-          {/* The subline prefers the classifier's name - it says far more
-                than COCO's coarse original. */}
-          {refining === true ? (
-            <Text style={[styles.subtitle, styles.subtitleWaiting]}>
-              {t('identifying')}
-            </Text>
-          ) : refined != null ? (
-            <Text style={[styles.subtitle, styles.subtitleRefined]}>
-              {refined.label} · {Math.round(refined.score * 100)}%
-            </Text>
-          ) : (
-            name !== en && (
-              <Text style={styles.subtitle} numberOfLines={1}>
-                {en}
-              </Text>
-            )
-          )}
         </View>
 
         <Animated.View
@@ -129,8 +108,6 @@ const styles = StyleSheet.create({
     paddingRight: 10,
   },
 
-  // Wider than a COCO name needs, because the refined name is what earns the
-  // reading here.
   textCol: { maxWidth: 168 },
   title: {
     color: COLORS.textPrimary,
@@ -139,14 +116,6 @@ const styles = StyleSheet.create({
     letterSpacing: -0.3,
     textTransform: 'capitalize',
   },
-  subtitle: {
-    color: COLORS.textFaint,
-    fontFamily: FONT.regular,
-    fontSize: 10.5,
-    marginTop: 1,
-  },
-  subtitleRefined: { color: COLORS.textMuted, fontFamily: FONT.medium },
-  subtitleWaiting: { fontStyle: 'italic' },
 
   scorePill: {
     borderRadius: 999,
