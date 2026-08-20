@@ -19,6 +19,7 @@ import { Skia, type SkData } from '@shopify/react-native-skia';
 import { COLORS, FONT } from '../shared/theme';
 import { t } from '../i18n';
 import { Checkbox } from './Checkbox';
+import { CloseIcon } from './modalIcons';
 
 const PAGE = 60;
 const COLUMNS = 3;
@@ -170,7 +171,7 @@ export function PhotoPicker({
             hitSlop={16}
             onPress={onClose}
           >
-            <Text style={styles.close}>✕</Text>
+            <CloseIcon />
           </Pressable>
         </View>
 
@@ -276,7 +277,6 @@ const styles = StyleSheet.create({
     fontSize: 17,
     letterSpacing: -0.3,
   },
-  close: { color: COLORS.textMuted, fontFamily: FONT.medium, fontSize: 16 },
   center: {
     flex: 1,
     alignItems: 'center',

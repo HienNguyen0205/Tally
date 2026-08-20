@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { PanResponder, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
@@ -26,6 +26,19 @@ interface Props {
    * out rather than shipping an invisible icon that still eats layout space.
    */
   showIcon?: boolean;
+  /**
+   * Whether `onChange` fires continuously during the drag, or once on
+   * release.
+   *
+   * DetectorScreen needs it live: its `onChange` is a plain `setThreshold`
+   * and the boxes re-filter as the finger moves. SettingsScreen does not -
+   * there this is a stored default for the *next* session, and its
+   * `onChange` runs `settings.update`, which writes MMKV and re-renders from
+   * App.tsx down (DetectorScreen, camera and Skia canvases included). Doing
+   * that once per percentage point is ~70 full-tree re-renders per drag on
+   * the JS thread, which is what stops the knob keeping up with the finger.
+   */
+  live?: boolean;
 }
 
 /**
@@ -40,7 +53,12 @@ function toProgress(value: number): number {
   return (value - MIN) / (MAX - MIN);
 }
 
-export function ThresholdSlider({ value, onChange, showIcon = true }: Props) {
+export function ThresholdSlider({
+  value,
+  onChange,
+  showIcon = true,
+  live = true,
+}: Props) {
   const travel = TRACK_W - KNOB;
   const progress = useSharedValue(toProgress(value));
   // The value at drag start, so finger travel accumulates onto it. Derived from
@@ -50,7 +68,40 @@ export function ThresholdSlider({ value, onChange, showIcon = true }: Props) {
   const startProgress = useRef(toProgress(value));
   const grabbed = useSharedValue(0);
 
+  // SettingsScreen passes a fresh `onChange` closure every render (it calls
+  // settings.update inline), and settings.update itself triggers that
+  // re-render - so depending on `onChange` directly would rebuild `pan` on
+  // every drag tick. A new PanResponder mid-gesture never received the
+  // onResponderGrant that started the touch, so its gesture-state baseline
+  // is wrong on the next move - which is what read as stutter. Reading the
+  // latest callback through a ref keeps `pan` stable across the whole drag.
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
+  // Shown instead of the `value` prop directly, so the number on screen
+  // tracks the finger every move event instead of waiting on the round trip
+  // through the parent below (which persists to MMKV and re-renders the
+  // whole app tree, not just this slider).
+  const [percent, setPercent] = useState(() => Math.round(value * 100));
+  // That round trip was also firing on every move event even when the
+  // rounded percent hadn't actually changed - most moves land in the same 1%
+  // bucket as the last one - which was the rest of what read as stutter.
+  // Committing only on a real change cuts it down to ~1 per percentage point.
+  const lastCommittedPercent = useRef(percent);
+  // Where the drag has actually got to, for the single commit a non-live
+  // slider makes on release.
+  const pendingPercent = useRef(percent);
+
   const clamp = (v: number) => Math.min(1, Math.max(0, v));
+
+  // Flushes whatever the drag ended on. A live slider has already committed
+  // it during the move, so this is a no-op there; a non-live one commits
+  // exactly once here, which is the whole point of the mode.
+  const commitPending = useCallback(() => {
+    if (pendingPercent.current === lastCommittedPercent.current) return;
+    lastCommittedPercent.current = pendingPercent.current;
+    onChangeRef.current(pendingPercent.current / 100);
+  }, []);
 
   const pan = useMemo(
     () =>
@@ -64,17 +115,24 @@ export function ThresholdSlider({ value, onChange, showIcon = true }: Props) {
         onPanResponderMove: (_, g) => {
           const next = clamp(startProgress.current + g.dx / travel);
           progress.value = next;
-          // Round to 1% so React state is not pushed on every pixel.
-          onChange(Math.round((MIN + next * (MAX - MIN)) * 100) / 100);
+          const pct = Math.round((MIN + next * (MAX - MIN)) * 100);
+          setPercent(pct);
+          pendingPercent.current = pct;
+          if (live && pct !== lastCommittedPercent.current) {
+            lastCommittedPercent.current = pct;
+            onChangeRef.current(pct / 100);
+          }
         },
         onPanResponderRelease: () => {
           grabbed.value = withTiming(0, { duration: 320, easing: ease });
+          commitPending();
         },
         onPanResponderTerminate: () => {
           grabbed.value = withTiming(0, { duration: 320, easing: ease });
+          commitPending();
         },
       }),
-    [grabbed, progress, travel, onChange],
+    [grabbed, progress, travel, live, commitPending],
   );
 
   const knobStyle = useAnimatedStyle(() => ({
@@ -95,9 +153,15 @@ export function ThresholdSlider({ value, onChange, showIcon = true }: Props) {
     (delta: number) => {
       const next = clamp(toProgress(value) + delta);
       progress.value = withTiming(next, { duration: 120, easing: ease });
-      onChange(Math.round((MIN + next * (MAX - MIN)) * 100) / 100);
+      const pct = Math.round((MIN + next * (MAX - MIN)) * 100);
+      setPercent(pct);
+      // A screen-reader step is a discrete action, not a drag, so it commits
+      // straight away in both modes.
+      pendingPercent.current = pct;
+      lastCommittedPercent.current = pct;
+      onChangeRef.current(pct / 100);
     },
-    [value, progress, onChange],
+    [value, progress],
   );
 
   return (
@@ -110,8 +174,8 @@ export function ThresholdSlider({ value, onChange, showIcon = true }: Props) {
       accessibilityValue={{
         min: Math.round(MIN * 100),
         max: Math.round(MAX * 100),
-        now: Math.round(value * 100),
-        text: t('percent', { n: Math.round(value * 100) }),
+        now: percent,
+        text: t('percent', { n: percent }),
       }}
       onAccessibilityAction={e => {
         if (e.nativeEvent.actionName === 'increment') step(0.05);
@@ -129,7 +193,7 @@ export function ThresholdSlider({ value, onChange, showIcon = true }: Props) {
         <Animated.View style={[styles.knob, knobStyle]} />
       </View>
 
-      <Text style={styles.value}>{Math.round(value * 100)}%</Text>
+      <Text style={styles.value}>{percent}%</Text>
     </View>
   );
 }

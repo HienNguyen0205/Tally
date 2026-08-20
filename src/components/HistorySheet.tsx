@@ -28,7 +28,7 @@ import { labelForCount } from '../shared/labels';
 import { t } from '../i18n';
 import { toCsv } from '../shared/export';
 import { CloseIcon } from './modalIcons';
-import { Checkbox } from './Checkbox';
+import { Checkbox, CheckMark } from './Checkbox';
 
 // Views, not the Skia <Icon>: a Skia Canvas draws nothing inside an RN Modal
 // on Android, because the Modal gets its own window and surface. Every icon in
@@ -40,79 +40,142 @@ import { Checkbox } from './Checkbox';
 // They used to be Text glyphs instead ('↓', '☑', '✕') - simpler, but each one
 // is a different font falling back in a different way on a different device,
 // which is why they never quite lined up with each other or with Checkbox's
-// hand-drawn ring. Redrawing them from the same bars-and-circles technique as
+// hand-drawn ring. Geist has no glyph for most of them, so Android silently
+// substituted the system font per character - see the same note in
+// Checkbox.tsx. Redrawing them from the same bars-and-borders technique as
 // Checkbox gives every header icon the exact same box to sit in, so a flex
 // row centres them all on the same line for real instead of by font luck.
+//
+// Both are outlines, not filled silhouettes: icons.tsx draws every Skia icon
+// as a thin even stroke, and the filled shapes these replaced read as heavier
+// and cruder than everything they sat next to.
 
 /**
- * A cloud, for exporting the history as CSV. Three overlapping circles plus a
- * rounded base, all the same solid colour - since nothing shows through, the
- * overlaps disappear and the four shapes read as one silhouette. No arrow: a
- * share sheet, not a literal download, comes up when this is pressed.
+ * An arrow rising out of an open tray - share the history as CSV.
+ *
+ * Replaces a cloud, which was wrong twice over: it was a solid silhouette in
+ * an app whose every other icon is a thin stroke, and a cloud means sync or
+ * upload to a server, which this does not do - pressing it opens the system
+ * share sheet with local text. This is `icons.tsx`'s `download` glyph
+ * (arrow into a tray) with the arrow reversed, so the two read as a pair.
+ *
+ * The tray is one View with its top border switched off rather than three
+ * separate bars - a border already draws the corners for free.
  */
-function CloudIcon({
+function ShareIcon({
   size = 20,
   color = COLORS.textPrimary,
 }: {
   size?: number;
   color?: string;
 }) {
-  const puff = (cx: number, cy: number, r: number) => ({
+  const stroke = Math.max(1.6, size * 0.085);
+  const tip = { x: size / 2, y: size * 0.14 };
+  const armLen = size * 0.28;
+  // Half the arm laid along its own 45-degree diagonal, so each arm starts at
+  // the tip rather than being centred on it.
+  const armOffset = (armLen / 2) * Math.SQRT1_2;
+
+  const arm = (dx: number, deg: number) => ({
     position: 'absolute' as const,
-    left: size * cx - size * r,
-    top: size * cy - size * r,
-    width: size * r * 2,
-    height: size * r * 2,
-    borderRadius: size * r,
+    width: armLen,
+    height: stroke,
+    borderRadius: stroke / 2,
     backgroundColor: color,
+    left: tip.x + dx * armOffset - armLen / 2,
+    top: tip.y + armOffset - stroke / 2,
+    transform: [{ rotate: `${deg}deg` }],
   });
+
   return (
     <View style={{ width: size, height: size }}>
-      <View style={puff(0.5, 0.42, 0.27)} />
-      <View style={puff(0.29, 0.58, 0.19)} />
-      <View style={puff(0.7, 0.56, 0.21)} />
+      {/* Tray: left, right and bottom edges only. */}
+      <View
+        style={{
+          ...styles.tray,
+          left: size * 0.16,
+          top: size * 0.52,
+          right: size * 0.16,
+          bottom: size * 0.12,
+          borderWidth: stroke,
+          borderColor: color,
+          borderBottomLeftRadius: size * 0.12,
+          borderBottomRightRadius: size * 0.12,
+        }}
+      />
+      {/* Shaft, running from the tip down into the tray. */}
       <View
         style={{
           ...styles.absPos,
-          left: size * 0.14,
-          top: size * 0.52,
-          width: size * 0.72,
-          height: size * 0.3,
-          borderRadius: size * 0.15,
+          left: size / 2 - stroke / 2,
+          top: tip.y,
+          width: stroke,
+          height: size * 0.44,
+          borderRadius: stroke / 2,
           backgroundColor: color,
         }}
       />
+      <View style={arm(-1, -45)} />
+      <View style={arm(1, 45)} />
     </View>
   );
 }
 
 /**
- * A small checked box with two list lines - the entry point into selection
- * mode. Reuses Checkbox itself for the box, rather than drawing a second
- * near-identical ring, so the one place selection is introduced already looks
- * like the state it is about to turn on.
+ * A ticked box above a plain one - the entry point into selection mode.
+ *
+ * Says "some of these, not all" in a way a single box cannot, which is what
+ * the mode is for. Both boxes are hollow outlines rather than the filled
+ * Checkbox this used before: filled means "already selected", and nothing is
+ * selected yet at the moment this button is pressed. The tick is Checkbox's
+ * own CheckMark, so the glyph introducing selection and the glyph marking a
+ * selected row are the same drawing.
  */
-function ListCheckIcon({ size = 20 }: { size?: number }) {
-  const box = size * 0.48;
-  const gap = size * 0.12;
-  const barW = size - box - gap;
-  const barH = Math.max(1.5, size * 0.1);
-  const bar = (top: number) => ({
-    position: 'absolute' as const,
-    left: box + gap,
+function SelectIcon({
+  size = 20,
+  color = COLORS.textPrimary,
+}: {
+  size?: number;
+  color?: string;
+}) {
+  const stroke = Math.max(1.5, size * 0.08);
+  const box = size * 0.46;
+  const radius = size * 0.09;
+
+  const outline = (top: number) => ({
+    ...styles.absPos,
+    left: 0,
     top,
-    width: barW,
-    height: barH,
-    borderRadius: barH / 2,
-    backgroundColor: COLORS.textPrimary,
+    width: box,
+    height: box,
+    borderWidth: stroke,
+    borderColor: color,
+    borderRadius: radius,
   });
+  const line = (top: number) => ({
+    ...styles.absPos,
+    left: box + size * 0.16,
+    top: top + box / 2 - stroke / 2,
+    right: 0,
+    height: stroke,
+    borderRadius: stroke / 2,
+    backgroundColor: color,
+  });
+
+  const topRow = 0;
+  const bottomRow = size - box;
+
   return (
     <View style={{ width: size, height: size }}>
-      <View style={{ ...styles.absPos, left: 0 * size, top: (size - box) / 2 }}>
-        <Checkbox selected size={box} />
+      <View style={outline(topRow)} />
+      {/* Inset by the border so the tick sits in the box's hole, not on it. */}
+      <View style={{ ...styles.absPos, left: stroke, top: topRow + stroke }}>
+        <CheckMark size={box - stroke * 2} color={color} />
       </View>
-      <View style={bar(size * 0.36 - barH / 2)} />
-      <View style={bar(size * 0.64 - barH / 2)} />
+      <View style={line(topRow)} />
+
+      <View style={outline(bottomRow)} />
+      <View style={line(bottomRow)} />
     </View>
   );
 }
@@ -212,7 +275,7 @@ function Row({
           hitSlop={12}
           onPress={onRemove}
         >
-          <Text style={styles.rowClose}>✕</Text>
+          <CloseIcon size={18} color={COLORS.textMuted} />
         </Pressable>
       )}
     </Pressable>
@@ -462,7 +525,7 @@ export function HistorySheet({
                   hitSlop={12}
                   onPress={shareCsv}
                 >
-                  <CloudIcon size={20} />
+                  <ShareIcon size={20} />
                 </Pressable>
                 <Pressable
                   accessibilityRole="button"
@@ -470,7 +533,7 @@ export function HistorySheet({
                   hitSlop={12}
                   onPress={() => setSelecting(true)}
                 >
-                  <ListCheckIcon size={20} />
+                  <SelectIcon size={20} />
                 </Pressable>
               </>
             )}
@@ -571,6 +634,9 @@ export function HistorySheet({
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#050505' },
   absPos: { position: 'absolute' },
+  // borderWidth is set per size at the call site; only the missing top edge
+  // that makes the box an open tray is constant.
+  tray: { position: 'absolute', borderTopWidth: 0 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -585,12 +651,6 @@ const styles = StyleSheet.create({
     letterSpacing: -0.3,
   },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 22 },
-  rowClose: {
-    color: COLORS.textMuted,
-    fontFamily: FONT.medium,
-    fontSize: 15,
-    paddingHorizontal: 4,
-  },
   center: {
     flex: 1,
     alignItems: 'center',

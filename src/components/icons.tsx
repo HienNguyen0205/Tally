@@ -49,7 +49,9 @@ const PATHS = {
   sum: makePath(
     'M12 3.5 A8.5 8.5 0 1 0 12 20.5 A8.5 8.5 0 1 0 12 3.5 M12 8 L12 16 M8 12 L16 12',
   ),
-  // Cross - dismiss a row or close a panel
+  // Cross - dismiss a panel. Only for surfaces outside an RN Modal (currently
+  // DetailSheet); anything inside one draws blank on Android and takes
+  // modalIcons' View-built CloseIcon instead, which mirrors this same shape.
   close: makePath('M6 6 L18 18 M18 6 L6 18'),
   // Open eye - password is showing
   eye: makePath(

@@ -6,7 +6,6 @@ import React, {
   useState,
 } from 'react';
 import {
-  Alert,
   Platform,
   View,
   Text,
@@ -69,6 +68,7 @@ import { ZoomSelector } from '../components/ZoomSelector';
 import { ReviewBar } from '../components/ReviewBar';
 import { LaunchScreen } from '../components/LaunchScreen';
 import { DetailSheet } from '../components/DetailSheet';
+import { useDialog } from '../components/Dialog';
 import { DetectionBox } from '../components/DetectionBox';
 import { ClassFilter } from '../components/ClassFilter';
 import { HistorySheet } from '../components/HistorySheet';
@@ -269,6 +269,9 @@ export function DetectorScreen({ settings, guest, onLeaveGuest }: Props) {
   }));
 
   const onAlert = useAlert(settings.hapticsEnabled);
+  // `show` renamed at the call site: `useAlert` above is the haptic buzz, and
+  // two things called alert in one component is one too many.
+  const { show: showDialog, dialog } = useDialog();
 
   // A cell readable and writable from both the JS thread and the worklet thread:
   // the shutter (JS) writes here, the worklet reads it each frame to decide
@@ -459,14 +462,14 @@ export function DetectorScreen({ settings, guest, onLeaveGuest }: Props) {
         setMode('idle');
         // Say it out loud: tapping a photo and having nothing happen just reads
         // as a broken app.
-        Alert.alert(t('scanFailed'), String(e));
+        showDialog({ title: t('scanFailed'), message: String(e) });
       } finally {
         setBatch(null);
         setScanBusy(false);
         setScanning(false);
       }
     },
-    [model, threshold, onAlert, resetSave, resetFilter, recordScan],
+    [model, threshold, onAlert, resetSave, resetFilter, recordScan, showDialog],
   );
 
   // Let the scan animation run on a little so the feedback registers. Skipped
@@ -904,6 +907,12 @@ export function DetectorScreen({ settings, guest, onLeaveGuest }: Props) {
           onClose={() => setSettingsOpen(false)}
         />
       )}
+
+      {/* Last, so it paints over the camera and its controls. The Modals above
+          are separate windows and would cover it regardless of order, but none
+          of them is open when a scan runs - the picker closes itself before
+          handing the photos over. */}
+      {dialog}
     </View>
   );
 }

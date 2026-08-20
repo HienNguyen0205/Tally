@@ -33,6 +33,42 @@ const LONG_MID = { x: (B.x + C.x) / 2, y: (B.y + C.y) / 2 };
 const CENTER = { x: 12, y: 11.5 };
 
 /**
+ * The check mark on its own, no ring - two bars on the grid above, sized to
+ * fill a `size` box.
+ *
+ * Split out of Checkbox so HistorySheet's select-mode icon can draw the same
+ * tick without a second copy of the coordinates. Two hand-placed check marks
+ * drifting apart is the exact failure this file already documents.
+ */
+export function CheckMark({ size, color }: { size: number; color: string }) {
+  // 0.72, not 1 - inherited from Checkbox, where it keeps the mark shy of the
+  // ring instead of touching it edge to edge.
+  const scale = (size / GRID) * 0.72;
+  const stroke = Math.max(1.6, size * 0.1);
+
+  function bar(mid: { x: number; y: number }, len: number, deg: number) {
+    const w = len * scale;
+    return {
+      position: 'absolute' as const,
+      width: w,
+      height: stroke,
+      borderRadius: stroke / 2,
+      backgroundColor: color,
+      left: size / 2 + (mid.x - CENTER.x) * scale - w / 2,
+      top: size / 2 + (mid.y - CENTER.y) * scale - stroke / 2,
+      transform: [{ rotate: `${deg}deg` }],
+    };
+  }
+
+  return (
+    <View style={{ width: size, height: size }}>
+      <View style={bar(SHORT_MID, SHORT_LEN, 45)} />
+      <View style={bar(LONG_MID, LONG_LEN, -45)} />
+    </View>
+  );
+}
+
+/**
  * The one selection tick drawn in the app: a hollow ring that fills solid
  * with a check mark when on, both animated. Built from Views, not the Skia
  * <Icon> - every caller here sits inside an RN Modal, where a Skia Canvas
@@ -80,24 +116,6 @@ export function Checkbox({
     transform: [{ scale: 0.6 + 0.4 * on.value }],
   }));
 
-  // Maps the 24-unit glyph grid onto this box. 0.72, not 1 - it keeps the
-  // mark shy of the ring instead of touching it edge to edge.
-  const scale = (size / GRID) * 0.72;
-  const stroke = Math.max(1.6, size * 0.1);
-
-  function bar(mid: { x: number; y: number }, len: number, deg: number) {
-    const w = len * scale;
-    return {
-      position: 'absolute' as const,
-      width: w,
-      height: stroke,
-      borderRadius: stroke / 2,
-      left: size / 2 + (mid.x - CENTER.x) * scale - w / 2,
-      top: size / 2 + (mid.y - CENTER.y) * scale - stroke / 2,
-      transform: [{ rotate: `${deg}deg` }],
-    };
-  }
-
   return (
     <View style={{ width: size, height: size }}>
       <Animated.View
@@ -108,8 +126,7 @@ export function Checkbox({
         ]}
       />
       <Animated.View style={[StyleSheet.absoluteFill, markStyle]} pointerEvents="none">
-        <View style={[styles.mark, bar(SHORT_MID, SHORT_LEN, 45)]} />
-        <View style={[styles.mark, bar(LONG_MID, LONG_LEN, -45)]} />
+        <CheckMark size={size} color="#04120A" />
       </Animated.View>
     </View>
   );
@@ -117,5 +134,4 @@ export function Checkbox({
 
 const styles = StyleSheet.create({
   ring: { borderWidth: 1.75 },
-  mark: { backgroundColor: '#04120A' },
 });

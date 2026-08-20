@@ -13,6 +13,7 @@ import { COCO_LABELS, label } from '../shared/labels';
 import { t } from '../i18n';
 import { PERSON_CLASS_ID } from '../shared/constants';
 import { GlassSurface } from './GlassSurface';
+import { Icon } from './icons';
 
 const ease = Easing.bezier(...EASE_OUT_EXPO);
 
@@ -100,7 +101,10 @@ export function DetailSheet({
         </Animated.View>
 
         {/* The close glyph gets its own circle rather than sitting bare next
-            to the text. */}
+            to the text. Skia rather than modalIcons' View version: nothing
+            here is inside an RN Modal, so the Canvas draws fine and this
+            picks up the same stroke weight as every other icon on the camera
+            screen. */}
         <Pressable
           style={styles.close}
           accessibilityRole="button"
@@ -108,7 +112,7 @@ export function DetailSheet({
           hitSlop={12}
           onPress={onClose}
         >
-          <Text style={styles.closeIcon}>✕</Text>
+          <Icon name="close" size={20} color={COLORS.textMuted} />
         </Pressable>
       </GlassSurface>
     </Animated.View>
@@ -162,10 +166,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: COLORS.shell,
-  },
-  closeIcon: {
-    color: COLORS.textMuted,
-    fontFamily: FONT.medium,
-    fontSize: 12,
   },
 });

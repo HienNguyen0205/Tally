@@ -1,6 +1,5 @@
 import { useCallback, type ReactNode } from 'react';
 import {
-  Alert,
   Modal,
   Pressable,
   ScrollView,
@@ -18,6 +17,7 @@ import type { useSettings } from '../hooks/useSettings';
 import { SegmentedTabs } from '../components/SegmentedTabs';
 import { ThresholdSlider } from '../components/ThresholdSlider';
 import { CloseIcon } from '../components/modalIcons';
+import { useDialog } from '../components/Dialog';
 
 /**
  * Section label, and the sections themselves - plain tinted panels rather than
@@ -89,28 +89,46 @@ export function SettingsScreen({
 }: Props) {
   const insets = useSafeAreaInsets();
   const { email, signOut } = useAuth();
+  const { show, dismiss, visible, dialog } = useDialog();
 
   const confirmClearHistory = useCallback(() => {
-    Alert.alert(
-      t('clearHistoryConfirmTitle'),
-      t('clearHistoryConfirmBody', { count: t('scanCount', { count: historyCount }) }),
-      [
-        { text: t('cancelSelect'), style: 'cancel' },
-        { text: t('clearHistory'), style: 'destructive', onPress: onClearHistory },
+    show({
+      title: t('clearHistoryConfirmTitle'),
+      message: t('clearHistoryConfirmBody', {
+        count: t('scanCount', { count: historyCount }),
+      }),
+      actions: [
+        {
+          label: t('clearHistory'),
+          variant: 'destructive',
+          onPress: onClearHistory,
+        },
+        { label: t('cancelSelect'), variant: 'cancel' },
       ],
-    );
-  }, [historyCount, onClearHistory]);
+    });
+  }, [historyCount, onClearHistory, show]);
 
   const confirmSignOut = useCallback(() => {
     if (email == null) return;
-    Alert.alert(t('signOutConfirmTitle'), t('signOutConfirmBody', { email }), [
-      { text: t('cancelSelect'), style: 'cancel' },
-      { text: t('signOut'), style: 'destructive', onPress: () => signOut() },
-    ]);
-  }, [email, signOut]);
+    show({
+      title: t('signOutConfirmTitle'),
+      message: t('signOutConfirmBody', { email }),
+      actions: [
+        { label: t('signOut'), variant: 'destructive', onPress: () => signOut() },
+        { label: t('cancelSelect'), variant: 'cancel' },
+      ],
+    });
+  }, [email, signOut, show]);
 
   return (
-    <Modal visible animationType="slide" statusBarTranslucent onRequestClose={onClose}>
+    <Modal
+      visible
+      animationType="slide"
+      statusBarTranslucent
+      // Back unwinds in the order things were opened. This Modal owns the back
+      // press while it is up, so the dialog cannot catch it itself.
+      onRequestClose={visible ? dismiss : onClose}
+    >
       <View style={[styles.root, { paddingTop: insets.top }]}>
         <View style={styles.header}>
           <Text style={styles.title}>{t('settingsTitle')}</Text>
@@ -157,6 +175,7 @@ export function SettingsScreen({
             <Row label={t('defaultThresholdLabel')} hint={t('defaultThresholdHint')}>
               <ThresholdSlider
                 showIcon={false}
+                live={false}
                 value={settings.defaultThreshold}
                 onChange={v => settings.update({ defaultThreshold: v })}
               />
@@ -210,6 +229,8 @@ export function SettingsScreen({
             )}
           </Section>
         </ScrollView>
+
+        {dialog}
       </View>
     </Modal>
   );

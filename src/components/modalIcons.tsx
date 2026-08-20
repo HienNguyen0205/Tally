@@ -13,16 +13,25 @@ import { COLORS } from '../shared/theme';
  * already is.
  */
 
-/** A centred X, two crossed bars. */
+/**
+ * A centred X, two crossed bars.
+ *
+ * Geometry is taken from `icons.tsx`'s Skia `close` glyph ('M6 6 L18 18
+ * M18 6 L6 18' on a 24 grid) so the two draw the same shape: each bar spans
+ * hypot(12,12) = 17 of 24 units, hence the 0.707 length factor. The old 0.6
+ * drew a noticeably stubbier X than the Skia one, which - along with the
+ * dimmer textMuted colour it used to default to - is what read as small and
+ * faint rather than crisp.
+ */
 export function CloseIcon({
-  size = 20,
-  color = COLORS.textMuted,
+  size = 28,
+  color = COLORS.textPrimary,
 }: {
   size?: number;
   color?: string;
 }) {
-  const stroke = Math.max(1.6, size * 0.1);
-  const len = size * 0.6;
+  const stroke = Math.max(2.2, size * 0.1);
+  const len = size * 0.707;
   const bar = (deg: number) => ({
     position: 'absolute' as const,
     width: len,
