@@ -217,6 +217,10 @@ export function DetectorScreen({ settings, guest, onLeaveGuest }: Props) {
     removeMany: removeScans,
     addPreview,
     loadPreview,
+    older: olderHistory,
+    loadOlder,
+    loadingOlder,
+    canLoadOlder,
   } = useScanHistory(guest);
 
   // The result already written to history. Compared by identity: a new scan
@@ -893,6 +897,10 @@ export function DetectorScreen({ settings, guest, onLeaveGuest }: Props) {
           batch={lastBatch}
           onRemoveMany={removeScans}
           loadPreview={loadPreview}
+          older={olderHistory}
+          onLoadOlder={loadOlder}
+          loadingOlder={loadingOlder}
+          canLoadOlder={canLoadOlder}
           onClose={() => setHistoryOpen(false)}
         />
       )}

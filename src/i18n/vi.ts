@@ -172,6 +172,14 @@ export const vi = {
   objectCount: '%{count} vật thể',
   countOf: '%{count} %{name}',
 
+  // Paging older scans back down from the cloud, past the local cap.
+  loadOlder: 'Xem các lần quét cũ hơn',
+
+  // Rolling summary above the history list. Same pre-rendered-halves trick as
+  // `batchTotal` above, for the same reason - three counts, one `count`.
+  weekTitle: '%{days} ngày qua',
+  weekTotal: '%{scans} · %{people} · %{total}',
+
   // Day headers
   today: 'Hôm nay',
   yesterday: 'Hôm qua',
@@ -262,6 +270,10 @@ export interface Params extends Record<PluralKey, { count: number }> {
   countOf: { count: number; name: string };
   sumPhotos: { count: number };
   scanCount: { count: number };
+  /** Always WEEK_DAYS (history.ts), so it never needs to inflect. */
+  weekTitle: { days: number };
+  /** All three are rendered strings - see `batchTotal` above. */
+  weekTotal: { scans: string; people: string; total: string };
   /** Pre-rendered via `scanCount` - same reason `batchTotal` takes strings. */
   clearHistoryConfirmBody: { count: string };
   signedInAs: { email: string };

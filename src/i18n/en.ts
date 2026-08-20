@@ -161,6 +161,11 @@ export const en: InflectedCatalog = {
   objectCount: { one: '%{count} object', other: '%{count} objects' },
   countOf: '%{count} %{name}',
 
+  loadOlder: 'Show older scans',
+
+  weekTitle: 'Last %{days} days',
+  weekTotal: '%{scans} · %{people} · %{total}',
+
   today: 'Today',
   yesterday: 'Yesterday',
 

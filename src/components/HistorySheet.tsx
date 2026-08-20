@@ -22,6 +22,8 @@ import {
   clockTime,
   groupByDay,
   totalOf,
+  WEEK_DAYS,
+  weekTotals,
   type ScanRecord,
 } from '../shared/history';
 import { labelForCount } from '../shared/labels';
@@ -397,6 +399,10 @@ export function HistorySheet({
   batch,
   loadPreview,
   onRemoveMany,
+  older,
+  onLoadOlder,
+  loadingOlder,
+  canLoadOlder,
   onClose,
 }: {
   records: ScanRecord[];
@@ -405,17 +411,39 @@ export function HistorySheet({
   loadPreview: (id: string) => Promise<string | null>;
   /** One row or a whole selection - both go through the same fade. */
   onRemoveMany: (ids: readonly string[]) => void;
+  /**
+   * Scans past the local cap, paged back in from the cloud. Displayed after
+   * `records` and otherwise treated the same - see the note on `visible`.
+   */
+  older: ScanRecord[];
+  onLoadOlder: () => void;
+  loadingOlder: boolean;
+  canLoadOlder: boolean;
   onClose: () => void;
 }) {
   const insets = useSafeAreaInsets();
 
   const [now] = useState(() => Date.now());
-  const sections = useMemo(() => groupByDay(records, now), [records, now]);
+
+  /**
+   * Everything on screen: the local history, then whatever has been paged in
+   * behind it. Both are already newest-first and `older` starts where
+   * `records` ends, so concatenating keeps the whole list in order without a
+   * sort.
+   *
+   * Every read below works off this rather than `records` - grouping,
+   * totals, select-all, the CSV. Writes still go out as plain ids through
+   * onRemoveMany, which knows which of the two lists an id came from.
+   */
+  const visible = useMemo(() => [...records, ...older], [records, older]);
+
+  const sections = useMemo(() => groupByDay(visible, now), [visible, now]);
+  const week = useMemo(() => weekTotals(visible, now), [visible, now]);
 
   // The id, not the record: deleting the open scan from underneath should shut
   // the viewer rather than leave a stale copy on screen.
   const [openId, setOpenId] = useState<string | null>(null);
-  const open = records.find(r => r.id === openId) ?? null;
+  const open = visible.find(r => r.id === openId) ?? null;
 
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
@@ -461,14 +489,14 @@ export function HistorySheet({
     });
   }, []);
 
-  // Against `records`, not a counter: a row that fades out while the sheet is
-  // open changes what "all" means.
-  const allSelected = records.length > 0 && selected.size === records.length;
+  // Against the list, not a counter: a row that fades out while the sheet is
+  // open changes what "all" means - and so does paging older scans in.
+  const allSelected = visible.length > 0 && selected.size === visible.length;
   const toggleAll = useCallback(() => {
     setSelected(prev =>
-      prev.size === records.length ? new Set() : new Set(records.map(r => r.id)),
+      prev.size === visible.length ? new Set() : new Set(visible.map(r => r.id)),
     );
-  }, [records]);
+  }, [visible]);
 
   const removeSelected = useCallback(() => {
     requestRemove([...selected]);
@@ -478,17 +506,22 @@ export function HistorySheet({
   // Filtered against `records` rather than trusted wholesale, so a row deleted
   // while the sheet is open drops out of the total too.
   const summary =
-    batch == null ? null : totalOf(records.filter(r => batch.includes(r.id)));
+    batch == null ? null : totalOf(visible.filter(r => batch.includes(r.id)));
 
   // The share sheet, not a file: RN's Share is already in core, and a count
   // pasted into a spreadsheet or a chat is what people actually do with it.
   // Writing a .csv would mean a filesystem dependency and a FileProvider to
   // hand the URI across the process boundary, for the same text.
+  //
+  // Exports the selection when there is one. Selection mode already knows
+  // which rows the user means, so making them export the whole history and
+  // delete the rest in a spreadsheet would be asking them to say it twice.
   const shareCsv = useCallback(() => {
-    Share.share({ message: toCsv(records), title: t('shareSubject') }).catch(e =>
+    const subset = selecting ? visible.filter(r => selected.has(r.id)) : visible;
+    Share.share({ message: toCsv(subset), title: t('shareSubject') }).catch(e =>
       console.warn('[HistorySheet] could not share the history', e),
     );
-  }, [records]);
+  }, [visible, selecting, selected]);
 
   return (
     <Modal
@@ -517,25 +550,29 @@ export function HistorySheet({
                 <Checkbox selected={allSelected} size={20} />
               </Pressable>
             )}
-            {records.length > 0 && !selecting && (
-              <>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={t('shareHistory')}
-                  hitSlop={12}
-                  onPress={shareCsv}
-                >
-                  <ShareIcon size={20} />
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={t('selectScans')}
-                  hitSlop={12}
-                  onPress={() => setSelecting(true)}
-                >
-                  <SelectIcon size={20} />
-                </Pressable>
-              </>
+            {/* Stays up in selection mode, where it exports the selection -
+                hiding it there would leave no way to reach that at all. With
+                nothing ticked there is nothing to export, so it goes out
+                rather than sharing an empty file. */}
+            {visible.length > 0 && (!selecting || selected.size > 0) && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t('shareHistory')}
+                hitSlop={12}
+                onPress={shareCsv}
+              >
+                <ShareIcon size={20} />
+              </Pressable>
+            )}
+            {visible.length > 0 && !selecting && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t('selectScans')}
+                hitSlop={12}
+                onPress={() => setSelecting(true)}
+              >
+                <SelectIcon size={20} />
+              </Pressable>
             )}
             <Pressable
               accessibilityRole="button"
@@ -548,7 +585,7 @@ export function HistorySheet({
           </View>
         </View>
 
-        {records.length === 0 ? (
+        {visible.length === 0 ? (
           <View style={styles.center}>
             <Text style={styles.message}>{t('historyEmpty')}</Text>
           </View>
@@ -567,19 +604,41 @@ export function HistorySheet({
               { paddingBottom: insets.bottom + (selecting ? 88 : 24) },
             ]}
             ListHeaderComponent={
-              summary != null && summary.photos > 1 ? (
-                <View style={styles.summary}>
-                  <Text style={styles.summaryTitle}>
-                    {t('batchTitle', { count: summary.photos })}
-                  </Text>
-                  <Text style={styles.summaryLine}>
-                    {t('batchTotal', {
-                      people: t('peopleCount', { count: summary.people }),
-                      total: t('objectCount', { count: summary.total }),
-                    })}
-                  </Text>
-                </View>
-              ) : null
+              <>
+                {summary != null && summary.photos > 1 && (
+                  <View style={styles.summary}>
+                    <Text style={styles.summaryTitle}>
+                      {t('batchTitle', { count: summary.photos })}
+                    </Text>
+                    <Text style={styles.summaryLine}>
+                      {t('batchTotal', {
+                        people: t('peopleCount', { count: summary.people }),
+                        total: t('objectCount', { count: summary.total }),
+                      })}
+                    </Text>
+                  </View>
+                )}
+
+                {/* Below the batch block, not above it: a batch summary is
+                    about the run that just finished and is what the sheet was
+                    opened to see, while this is standing context. Hidden when
+                    the window is empty - a row of zeroes says nothing that an
+                    absent strip does not. */}
+                {week.photos > 0 && (
+                  <View style={styles.week}>
+                    <Text style={styles.weekTitle}>
+                      {t('weekTitle', { days: WEEK_DAYS })}
+                    </Text>
+                    <Text style={styles.weekLine}>
+                      {t('weekTotal', {
+                        scans: t('scanCount', { count: week.photos }),
+                        people: t('peopleCount', { count: week.people }),
+                        total: t('objectCount', { count: week.total }),
+                      })}
+                    </Text>
+                  </View>
+                )}
+              </>
             }
             renderItem={({ item }) => (
               <Row
@@ -592,6 +651,26 @@ export function HistorySheet({
                 onRemove={() => requestRemove([item.id])}
               />
             )}
+            // A button rather than onEndReached: each page downloads a
+            // thumbnail per row, so pulling one automatically every time the
+            // list bottoms out would spend someone's data on scans they only
+            // scrolled past.
+            ListFooterComponent={
+              canLoadOlder ? (
+                <Pressable
+                  style={styles.loadOlder}
+                  accessibilityRole="button"
+                  disabled={loadingOlder}
+                  onPress={onLoadOlder}
+                >
+                  {loadingOlder ? (
+                    <ActivityIndicator color={COLORS.textMuted} />
+                  ) : (
+                    <Text style={styles.loadOlderText}>{t('loadOlder')}</Text>
+                  )}
+                </Pressable>
+              ) : null
+            }
           />
         )}
 
@@ -726,6 +805,44 @@ const styles = StyleSheet.create({
   },
   summaryLine: {
     color: COLORS.textPrimary,
+    fontFamily: FONT.medium,
+    fontSize: 13,
+  },
+  // Deliberately quieter than the batch block above: that one is a result, this
+  // is background. Same padding so the two stack as one column when both show.
+  week: {
+    padding: 14,
+    marginBottom: 4,
+    borderRadius: 16,
+    gap: 3,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.hairline,
+  },
+  weekTitle: {
+    color: COLORS.textFaint,
+    fontFamily: FONT.semibold,
+    fontSize: 11,
+    letterSpacing: 1.4,
+    textTransform: 'uppercase',
+  },
+  weekLine: {
+    color: COLORS.textPrimary,
+    fontFamily: FONT.medium,
+    fontSize: 13,
+  },
+  // Fixed height so swapping the label for the spinner does not make the list
+  // jump under the finger that just pressed it.
+  loadOlder: {
+    height: 44,
+    marginTop: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  loadOlderText: {
+    color: COLORS.textMuted,
     fontFamily: FONT.medium,
     fontSize: 13,
   },

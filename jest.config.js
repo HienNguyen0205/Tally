@@ -27,4 +27,22 @@ module.exports = {
     '^@lodev09/react-native-true-sheet$':
       '@lodev09/react-native-true-sheet/mock',
   },
+  // Anything importing reanimated - which is very nearly every component -
+  // used to die at require time on
+  // "Cannot read properties of undefined (reading 'loadUnpackersWithCode')".
+  // reanimated pulls in react-native-worklets, whose NativeWorklets.native.ts
+  // calls into the native module as an import-time side effect, and under Jest
+  // there is no binary registered to answer.
+  //
+  // This resolver ships with react-native-worklets for exactly that: it drops
+  // the `.native` extensions when resolving inside the package, so Jest picks
+  // NativeWorklets.ts over NativeWorklets.native.ts and the native call is
+  // never reached. Preferred over mapping reanimated to its own `mock` module,
+  // which would swap the whole library for no-ops - the real one loads fine
+  // once worklets stops reaching for the binary, so animated components can be
+  // rendered and asserted on rather than stubbed out.
+  resolver: 'react-native-worklets/jest/resolver.js',
+  // Registers reanimated's `toHaveAnimatedStyle` / `toHaveAnimatedProps`
+  // matchers and puts animations on a fake clock.
+  setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
 };

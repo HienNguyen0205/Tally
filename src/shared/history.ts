@@ -77,6 +77,31 @@ function dayKey(at: number): number {
   return d.getTime();
 }
 
+/** How many days the rolling summary covers, today included. */
+export const WEEK_DAYS = 7;
+
+/**
+ * Totals across the last week, for the strip above the history list.
+ *
+ * A rolling seven days from this morning, not a calendar week: the question
+ * being answered is "how much have I counted lately", and a Monday reset
+ * would blank that out every week for someone who counts on weekends.
+ *
+ * Counted back with `setDate` rather than subtracting 6 * 86400000, for the
+ * same reason groupByDay does: a day is not always 24 hours across a DST
+ * shift, and the window would drift by an hour into the wrong day.
+ */
+export function weekTotals(
+  records: readonly ScanRecord[],
+  now: number,
+): { people: number; total: number; photos: number } {
+  const from = new Date(dayKey(now));
+  from.setDate(from.getDate() - (WEEK_DAYS - 1));
+  const start = from.getTime();
+
+  return totalOf(records.filter(r => r.at >= start));
+}
+
 /**
  * "09:22" - when in the day a scan happened.
  *

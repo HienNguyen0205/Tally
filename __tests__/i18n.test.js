@@ -39,6 +39,11 @@ const INTERPOLATED = [
   ['countOf', { count: 4, name: 'thuyền' }],
   ['sumPhotos', { count: 9 }],
   ['scanCount', { count: 5 }],
+  ['weekTitle', { days: 7 }],
+  [
+    'weekTotal',
+    { scans: '5 scans', people: '3 people', total: '11 objects' },
+  ],
   ['clearHistoryConfirmBody', { count: '5 scans' }],
   ['signedInAs', { email: 'a@b.co' }],
 ];

@@ -146,15 +146,47 @@ export async function deleteScans(ids: readonly string[]): Promise<boolean> {
 export async function restoreFromCloud(limit: number): Promise<ScanRecord[]> {
   const userId = await getUserId();
   if (userId == null) return [];
+  return fetchPage(userId, limit, 0);
+}
 
+/**
+ * A page of scans older than the ones already on screen, for the "show older"
+ * button at the foot of the history list.
+ *
+ * The local history is capped at HISTORY_LIMIT and the cloud table is not, so
+ * everything past that cap was already backed up and simply had no way to be
+ * read back. This is that way back.
+ *
+ * Offset paging rather than a `.lt('at', oldest)` cursor: two scans from one
+ * batch can land on the same millisecond, and a strictly-older cursor would
+ * silently skip the second of the pair. Offsets are only unstable if rows are
+ * inserted while paging, and no scan can start while the history sheet is
+ * covering the camera - the caller dedupes by id anyway.
+ */
+export async function fetchOlderScans(
+  limit: number,
+  offset: number,
+): Promise<ScanRecord[]> {
+  const userId = await getUserId();
+  if (userId == null) return [];
+  return fetchPage(userId, limit, offset);
+}
+
+/** Rows plus their thumbnails, newest first. Shared by both readers above so
+ *  a restored record and a paged-in one are built exactly the same way. */
+async function fetchPage(
+  userId: string,
+  limit: number,
+  offset: number,
+): Promise<ScanRecord[]> {
   const { data, error } = await supabase
     .from('scans')
     .select('id, at, people, total, counts')
     .eq('user_id', userId)
     .order('at', { ascending: false })
-    .limit(limit);
+    .range(offset, offset + limit - 1);
   if (error != null || data == null) {
-    console.warn('[cloudSync] could not restore history', error);
+    console.warn('[cloudSync] could not read scans', error);
     return [];
   }
 

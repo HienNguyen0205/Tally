@@ -71,10 +71,43 @@ their thumbnails) across devices and restores them after a reinstall.
   [`restoreFromCloud`](src/shared/cloudSync.ts) pulls back down when local
   storage is empty (reinstall or a new device). Full-size previews sync the
   same way, lazily, only when a scan is opened.
+- **Uploads survive being offline.** Counting works with no signal, so an upload
+  that fails cannot just be logged and forgotten — the scan would be missing
+  from the backup permanently. Every scan is queued in
+  [`pendingSync.ts`](src/shared/pendingSync.ts) *before* the request goes out
+  and cleared only once it lands, and the queue is retried on launch and again
+  whenever the app returns to the foreground (the usual case: scan with no
+  signal, pocket the phone, get a connection back without ever restarting).
+  Deletes queue the same way, so a scan removed offline does not come back on
+  the next restore. Both `uploadScan` and the storage upload are idempotent
+  (`upsert`), since a retry cannot know how much of the previous attempt landed.
+- **Older scans paged back from the cloud.** Local history is capped at
+  `HISTORY_LIMIT` (50) but the Supabase table is not, so everything past the cap
+  was already backed up with no way to read it. A "show older" button at the
+  foot of the list pulls pages of 25 down on demand
+  ([`fetchOlderScans`](src/shared/cloudSync.ts)) — a button rather than
+  infinite scroll, because each page downloads a thumbnail per row. Paged-in
+  records are display state only and never written back to MMKV, which would
+  break the 50-record cap the local store promises.
+- **A rolling week summary** above the history list — scans, people and objects
+  over the last 7 days ([`weekTotals`](src/shared/history.ts)). Rolling rather
+  than a calendar week, so it does not blank out every Monday for someone who
+  counts at weekends.
+- **CSV export, of everything or of a selection.** `toCsv` writes tidy data (one
+  row per class per scan) to the system share sheet; with rows ticked in
+  selection mode it exports just those, since the list already knows which ones
+  you mean.
 - **A Settings screen** ([`SettingsScreen`](src/screens/SettingsScreen.tsx),
   reached from the camera header): switch language instantly at runtime, toggle
   the haptic alert, set the confidence threshold a session starts with, clear
-  local scan history, and sign out. See [Settings](#settings) below.
+  local scan history, and sign out.
+- **The app draws its own dialogs.** [`Dialog.tsx`](src/components/Dialog.tsx)
+  replaces React Native's `Alert`, which renders the OS dialog — Material on
+  Android, UIKit on iOS — so the surface asking to delete a scan looked nothing
+  like the screen it was asked from, and different again on the other platform.
+  It is an absolutely positioned overlay rather than a `Modal`, because
+  `SettingsScreen` is itself one and stacking Modals on Android means two
+  windows fighting over the same back button.
 
 ## Requirements
 
@@ -415,22 +448,22 @@ quietly wrong results:
   invalid stored value falling back instead of sticking, and `useLocale()`
   actually re-rendering a subscribed component with no context or props
   involved
-
-MMKV needs no test setup: `createMMKV()` detects `JEST_WORKER_ID` and returns
-an in-memory instance on its own. That auto-detection runs too late to help
-here, though — `react-native-mmkv`'s own import chain reaches into
-`react-native-nitro-modules`, which touches `TurboModuleRegistry` as a
-side effect of merely being imported, before the test-environment check ever
-gets a chance to run. [`__mocks__/react-native-mmkv.js`](__mocks__/react-native-mmkv.js)
-replaces the package outright under Jest (automatic for anything in
-`__mocks__` next to `node_modules` — no `jest.mock()` call needed) with a
-minimal `Map`-backed `createMMKV()`, so that chain never executes.
-
-Linting:
-
-```bash
-npm run lint
-```
+- [`__tests__/history.test.js`](__tests__/history.test.js) — day grouping and
+  `weekTotals()`, above all the window edges: the oldest day in the rolling week
+  is included in full and the day before it is not. Both count back with
+  `setDate` rather than subtracting `86400000`, because a day is not always 24
+  hours — across a US spring-forward, subtracting six days lands at 23:00 on the
+  *previous* day
+- [`__tests__/pendingSync.test.js`](__tests__/pendingSync.test.js) — the offline
+  retry queue, including the invariant that keeps a deleted scan deleted:
+  queueing a delete drops that id from the upload queue, so a scan removed
+  before its upload landed is not recreated in the cloud by the next flush.
+  Plus a corrupt queue degrading to empty rather than throwing on launch
+- [`__tests__/dialog.test.js`](__tests__/dialog.test.js) — the first component
+  test in the project: a notice getting a single dismiss button, an action
+  running and closing, cancel closing without running the other action. It
+  doubles as a canary for the Reanimated Jest setup below, since a regression
+  there silently costs the whole UI its testability
 
 ## Project structure
 
@@ -452,8 +485,9 @@ ObjectDetector/
       settings.ts      #   Haptics/defaultThreshold: shape, defaults, MMKV (de)serialisation
       supabase.ts      #   Supabase client (MMKV-backed session via storage.ts), getUserId()
       cloudSync.ts     #   Uploads/downloads scans, thumbnails and previews to Supabase
+      pendingSync.ts   #   Retry queue: scan ids the cloud has not accepted yet
       authErrors.ts    #   Supabase auth errors → translated copy; email/password checks
-    i18n/              # All UI copy. See "Localisation" below
+    i18n/              # All UI copy: Vietnamese is the source of truth, English typed against it
       vi.ts            #   Vietnamese catalog (source of truth) + the Params contract
       en.ts            #   English catalog, typed against vi
       index.ts         #   i18n-js instance, locale detection/override, setLocale, useLocale, t()
@@ -467,8 +501,9 @@ ObjectDetector/
     components/        # One file per component. HUD (detection boxes, class filter,
                        #   photo picker, threshold slider, detail/history sheets) plus the
                        #   shared primitives: GlassSurface, CtaButton, SegmentedTabs,
-                       #   FormField, AmbientBackdrop, IconButton, icons (Skia) and
-                       #   modalIcons (plain View, for use inside a Modal)
+                       #   FormField, AmbientBackdrop, IconButton, Dialog (the app's own
+                       #   Alert), icons (Skia) and modalIcons/Checkbox (plain View, for
+                       #   use inside a Modal, where a Skia Canvas draws nothing on Android)
     hooks/             # useAuth (Supabase session), useSettings (haptics/defaultThreshold),
                        #   useScanHistory (local + cloud history), useCameraControls,
                        #   useClassFilter, useRefinedLabel, useAlert (haptics, mutable via
@@ -481,7 +516,9 @@ ObjectDetector/
     models/            # yolo26n.tflite + notes on its verified tensor layout
   __mocks__/
     react-native-mmkv.js # Jest replacement for the native module - see Testing above
-  __tests__/           # Box coordinate tests + the i18n catalog/runtime contracts
+  __tests__/           # Box coordinates, history/sync logic, the i18n contracts, and
+                       #   the first component test (Dialog)
+  jest.setup.js        # Registers reanimated's animated-style matchers - see Testing
   patches/             # patch-package patch for react-native-fast-tflite
   android/             # Android project (bare workflow)
   ios/                 # iOS project + Podfile
@@ -545,7 +582,17 @@ ObjectDetector/
 - **Jest must transform the native packages.** The whole reanimated, worklets,
   skia, vision-camera, nitro, blur and camera-roll group ships ESM; see
   `transformIgnorePatterns` in [jest.config.js](jest.config.js) (note the pattern
-  also accepts `\` for Windows paths).
+  also accepts `\` for Windows paths). Transforming them is necessary but not
+  sufficient — two of them also touch native modules at import time, see
+  [Native modules under Jest](#native-modules-under-jest).
+- **A `Modal` is its own window on Android, with consequences in three places.**
+  A Skia `<Canvas>` inside one draws nothing, which is why `modalIcons.tsx` and
+  `Checkbox.tsx` redraw their glyphs from plain Views; stacking a second `Modal`
+  on top means two windows fighting over the back button, which is why both
+  `Dialog` and `HistorySheet`'s photo viewer are absolutely positioned overlays
+  instead; and the window that is on top owns the back press, so `Dialog`'s own
+  `BackHandler` only fires on a plain screen — inside a `Modal` the host chains
+  it through `onRequestClose` instead.
 
 ## Key libraries
 
@@ -563,4 +610,19 @@ ObjectDetector/
 | [`@react-native-community/blur`](https://github.com/Kureev/react-native-blur) | Frosted-glass backgrounds for the HUD cards |
 | [`@supabase/supabase-js`](https://github.com/supabase/supabase-js) | Auth (email/password) and the Postgres/storage backend for history sync |
 | [`react-native-mmkv`](https://github.com/mrousavy/react-native-mmkv) | The one on-device key/value store — history/preview cache, settings, the locale override, and (via an async-shaped adapter) the session store `supabase-js` persists into |
-| [`i18n-js`](https://github.com/fnando/i18n-js) | Translation lookup, interpolation and locale fallback — see [Localisation](#localisation) |
+| [`i18n-js`](https://github.com/fnando/i18n-js) | Translation lookup, interpolation and locale fallback — see [`src/i18n/`](src/i18n) |
+
+## License
+
+[AGPL-3.0](LICENSE).
+
+The licence is not a free choice here: the bundled Ultralytics YOLO26n weights
+are themselves AGPL-3.0, and that obligation reaches the whole app. In practice
+that means anyone you distribute a build to — including over a network — is
+entitled to the corresponding source. If you need to ship a closed-source build,
+the route is a [commercial licence from Ultralytics](https://ultralytics.com/license),
+not a different licence on this repository. See
+[assets/models/README.md](assets/models/README.md) for the model's own terms.
+
+Geist, in [assets/fonts](assets/fonts), is licensed separately under the SIL
+Open Font License.

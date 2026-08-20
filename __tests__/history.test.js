@@ -1,11 +1,13 @@
 const {
   HISTORY_LIMIT,
+  WEEK_DAYS,
   addRecord,
   clockTime,
   groupByDay,
   parseHistory,
   summarise,
   totalOf,
+  weekTotals,
 } = require('../src/shared/history');
 const { PERSON_CLASS_ID } = require('../src/shared/constants');
 const { t } = require('../src/i18n');
@@ -172,5 +174,45 @@ describe('groupByDay', () => {
 
   it('returns nothing for an empty history', () => {
     expect(groupByDay([], now)).toEqual([]);
+  });
+});
+
+describe('weekTotals', () => {
+  const now = ts(2026, 8, 18, 10, 0);
+
+  function scan(at, people, total) {
+    return { id: String(at), at, thumbnail: '', people, total, counts: [] };
+  }
+
+  it('adds up every scan inside the window', () => {
+    expect(
+      weekTotals([scan(ts(2026, 8, 18, 9), 3, 5), scan(ts(2026, 8, 16, 9), 2, 4)], now),
+    ).toEqual({ people: 5, total: 9, photos: 2 });
+  });
+
+  // The window is a rolling WEEK_DAYS ending today, so the oldest day it can
+  // include is 6 days back - and the day before that must fall outside.
+  it('includes the whole first day of the window and excludes the day before', () => {
+    const oldest = ts(2026, 8, 18 - (WEEK_DAYS - 1), 0, 1);
+    const tooOld = ts(2026, 8, 18 - WEEK_DAYS, 23, 59);
+
+    expect(weekTotals([scan(oldest, 1, 1)], now).photos).toBe(1);
+    expect(weekTotals([scan(tooOld, 1, 1)], now).photos).toBe(0);
+  });
+
+  it('counts from local midnight, so a scan earlier today is always in', () => {
+    expect(weekTotals([scan(ts(2026, 8, 18, 0, 1), 7, 7)], now)).toEqual({
+      people: 7,
+      total: 7,
+      photos: 1,
+    });
+  });
+
+  it('is empty when nothing is recent', () => {
+    expect(weekTotals([scan(ts(2026, 1, 1), 9, 9)], now)).toEqual({
+      people: 0,
+      total: 0,
+      photos: 0,
+    });
   });
 });

@@ -5,6 +5,7 @@ import { storage } from '../shared/storage';
 import {
   deleteScans,
   downloadPreview,
+  fetchOlderScans,
   restoreFromCloud,
   uploadPreview,
   uploadScan,
@@ -57,10 +58,28 @@ const previewKey = (id: string) => `tally.preview.${id}`;
  * moment they do create an account. The hook still runs unconditionally
  * (rules of hooks), each write just checks `guest` first.
  */
+/** How many older scans one press of "show older" pulls down. */
+const PAGE = 25;
+
 export function useScanHistory(guest: boolean) {
   const [records, setRecords] = useState<ScanRecord[]>([]);
   const [loaded, setLoaded] = useState(false);
   const current = useRef<ScanRecord[]>([]);
+
+  /**
+   * Scans past HISTORY_LIMIT, paged back in from the cloud on demand.
+   *
+   * Kept apart from `records` rather than appended to it, and never written to
+   * MMKV: `commit` persists whatever list it is given and `addRecord` caps at
+   * HISTORY_LIMIT, so folding a paged-in page into the same array would write
+   * 75 records to a store that promises 50 - and the next launch would silently
+   * truncate back, losing whichever end parseHistory sliced off. These are view
+   * state, alive only while the sheet is open.
+   */
+  const [older, setOlder] = useState<ScanRecord[]>([]);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  /** False once a short page comes back - there is nothing further to ask for. */
+  const [moreInCloud, setMoreInCloud] = useState(true);
 
   const commit = useCallback((next: ScanRecord[]) => {
     // Whatever left the list takes its preview with it - dropped off the end by
@@ -175,6 +194,14 @@ export function useScanHistory(guest: boolean) {
       if (guest) return;
       const drop = new Set(ids);
       commit(current.current.filter(r => !drop.has(r.id)));
+      // A paged-in row is not in `current`, so commit cannot remove it - but
+      // the cloud delete below is what actually deletes it, and leaving it on
+      // screen would make the row look undeletable.
+      setOlder(prev =>
+        prev.some(r => drop.has(r.id))
+          ? prev.filter(r => !drop.has(r.id))
+          : prev,
+      );
 
       // markDelete also drops each id from the upload queue, so a scan removed
       // before its upload ever landed is not recreated in the cloud by the
@@ -241,6 +268,41 @@ export function useScanHistory(guest: boolean) {
       clearUpload(id);
     }
   }, [guest]);
+
+  /**
+   * Pulls the next page of older scans down from the cloud.
+   *
+   * The offset is how many rows are already on screen. That assumes the local
+   * history and the cloud's newest rows line up, which they do except while a
+   * scan is still queued for upload (see pendingSync) - so the merge dedupes
+   * by id rather than trusting the arithmetic.
+   */
+  const loadOlder = useCallback(async () => {
+    if (guest || loadingOlder || !moreInCloud) return;
+
+    setLoadingOlder(true);
+    try {
+      const page = await fetchOlderScans(
+        PAGE,
+        current.current.length + older.length,
+      );
+      // A short page means the end of the table, including a page of zero.
+      if (page.length < PAGE) setMoreInCloud(false);
+      if (page.length === 0) return;
+
+      setOlder(prev => {
+        const seen = new Set([
+          ...current.current.map(r => r.id),
+          ...prev.map(r => r.id),
+        ]);
+        return [...prev, ...page.filter(r => !seen.has(r.id))];
+      });
+    } catch (e) {
+      console.warn('[useScanHistory] could not load older scans', e);
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [guest, loadingOlder, moreInCloud, older.length]);
 
   // Gated on `loaded`, because flush looks each pending id up in
   // `current.current` - running before the history is read would find nothing
@@ -312,5 +374,30 @@ export function useScanHistory(guest: boolean) {
     [cacheLocally, guest],
   );
 
-  return { records, loaded, add, removeMany, addPreview, loadPreview };
+  return {
+    records,
+    loaded,
+    add,
+    removeMany,
+    addPreview,
+    loadPreview,
+    older,
+    loadOlder,
+    loadingOlder,
+    /**
+     * A full local list means the cloud probably holds more behind it; a
+     * non-empty `older` means it provably does. Below the cap and before any
+     * paging, offering the button would mostly mean offering a round trip
+     * that comes back empty.
+     *
+     * Known gap: deleting rows until the local list drops under the cap hides
+     * the button even though the cloud still has older scans. Answering that
+     * properly needs a count query on every open, which is a network call on a
+     * screen that currently opens instantly.
+     */
+    canLoadOlder:
+      !guest &&
+      moreInCloud &&
+      (records.length >= HISTORY_LIMIT || older.length > 0),
+  };
 }
