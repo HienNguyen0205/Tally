@@ -2,16 +2,22 @@ import type { Frame } from 'react-native-vision-camera';
 import type { Resizer } from 'react-native-vision-camera-resizer';
 import type { TensorflowModel } from 'react-native-fast-tflite';
 
-import { MAX_DETECTIONS, NUM_CLASSES, RAW_SCORE_FLOOR } from '../shared/constants';
+import {
+  MAX_DETECTIONS,
+  NUM_CLASSES,
+  RAW_SCORE_FLOOR,
+} from '../shared/constants';
 import type { Detection } from '../shared/detections';
 
 /**
  * Reads YOLO26's raw output into a detection list. Coordinates are in the square
  * the model saw, not yet mapped onto the frame - see `toFrameBox`.
  *
- * The model is exported with `end2end: false`, so the output is `[1, 84, 8400]`:
- *   84 = 4 (cx, cy, w, h) + 80 class scores
- *   8400 = 80² + 40² + 20² anchors across the three stride levels
+ * The model is exported with `end2end: false`, so the output is `[1, 5, N]`:
+ *   5 = 4 (cx, cy, w, h) + 1 face score
+ *   N = anchors across the three stride levels - 2100 for a 320 input
+ *       (40² + 20² + 10²), 8400 for a 640 one. Derived from the buffer below
+ *       rather than hardcoded, so a re-export at another size still parses.
  * It is channel-major, so channel `c` at anchor `a` sits at `c * anchors + a`,
  * NOT `a * 84 + c`. Swap the two and boxes still come out, just in wrong places.
  *

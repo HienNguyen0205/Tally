@@ -100,7 +100,11 @@ export function Checkbox({
   }, [selected, on]);
 
   const ringStyle = useAnimatedStyle(() => ({
-    borderColor: interpolateColor(on.value, [0, 1], [COLORS.textMuted, COLORS.accent]),
+    borderColor: interpolateColor(
+      on.value,
+      [0, 1],
+      [COLORS.textMuted, COLORS.accent],
+    ),
     backgroundColor: interpolateColor(
       on.value,
       [0, 1],
@@ -125,7 +129,10 @@ export function Checkbox({
           ringStyle,
         ]}
       />
-      <Animated.View style={[StyleSheet.absoluteFill, markStyle]} pointerEvents="none">
+      <Animated.View
+        style={[StyleSheet.absoluteFill, markStyle]}
+        pointerEvents="none"
+      >
         <CheckMark size={size} color="#04120A" />
       </Animated.View>
     </View>

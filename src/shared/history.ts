@@ -175,8 +175,8 @@ function toRecord(v: unknown): ScanRecord | null {
     typeof r.faces === 'number'
       ? r.faces
       : typeof r.total === 'number'
-        ? r.total
-        : null;
+      ? r.total
+      : null;
   if (faces === null) return null;
 
   return { id: r.id, at: r.at, thumbnail: r.thumbnail, faces };

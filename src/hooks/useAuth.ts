@@ -36,7 +36,7 @@ export function useAuth() {
       setState({
         loading: false,
         userId: real ? session.user.id : null,
-        email: real ? (session.user.email ?? null) : null,
+        email: real ? session.user.email ?? null : null,
       });
     });
     return () => data.subscription.unsubscribe();
@@ -55,8 +55,17 @@ export function useAuth() {
     async (
       email: string,
       password: string,
+      displayName: string,
     ): Promise<{ error: AuthError | null; status?: 'confirm' | 'done' }> => {
-      const { data, error } = await supabase.auth.signUp({ email, password });
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        // Carried on the account itself rather than asked for again at face
+        // enrolment: the name is who you are, not part of scanning your face,
+        // and stashing it here means it survives 'confirm' (where there is no
+        // session yet to write a profile row with).
+        options: { data: { display_name: displayName } },
+      });
       if (error != null) return { error };
       return { error: null, status: data.session != null ? 'done' : 'confirm' };
     },

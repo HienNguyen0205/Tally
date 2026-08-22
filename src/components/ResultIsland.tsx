@@ -17,34 +17,44 @@ interface Props {
    *  safe area inset plus the header pill above, so the two never overlap. */
   top: number;
   faceCount: number;
-  /** Running total while captures are being added up; null when off. */
-  session?: { faces: number; photos: number } | null;
 }
 
 const ease = Easing.bezier(...EASE_OUT_EXPO);
 
 /**
- * The result island floating at the top of the screen. Mounted only once there
- * is a result - before a scan there is nothing to say, and the viewfinder
- * deserves the space more than a hint line does.
+ * The count, floating at the top of the screen.
+ *
+ * It used to carry a second pill with a running total across several captures.
+ * That went with the shutter: there are no captures to add up in a live
+ * viewfinder, only the number in front of the camera right now.
  */
-export function ResultIsland({ top, faceCount, session = null }: Props) {
+function ResultIslandInner({ top, faceCount }: Props) {
   const { width, height } = useWindowDimensions();
-  // Landscape: shift left to clear the shutter, which has moved to the right.
   const landscape = width > height;
 
   const reveal = useSharedValue(0);
   const stagger = useSharedValue(0);
 
+  // ON MOUNT ONLY. This used to list `faceCount` as a dependency, which meant
+  // every change to the number reset the opacity to zero and faded the whole
+  // pill back in over 720ms - an announcement, written when a count arrived
+  // once per shutter press.
+  //
+  // A live viewfinder changes the number several times a second, so what the
+  // announcement actually produced was a pill blinking out and back, plus a
+  // figure that vanished for 140ms each time before fading in behind it. On a
+  // screen where nothing else moves, that reads as the app flickering.
+  //
+  // Measured: sampling the pill's region across a dozen frames swung 18.9 grey
+  // levels while the camera behind it moved 0.1. The number changing is its own
+  // feedback; it does not need to be announced.
   useEffect(() => {
-    reveal.value = 0;
-    stagger.value = 0;
     reveal.value = withTiming(1, { duration: 720, easing: ease });
     stagger.value = withDelay(
       140,
       withTiming(1, { duration: 720, easing: ease }),
     );
-  }, [faceCount, reveal, stagger]);
+  }, [reveal, stagger]);
 
   // Animate transform/opacity only - leave width/height alone to avoid reflow.
   const shellStyle = useAnimatedStyle(() => ({
@@ -83,25 +93,18 @@ export function ResultIsland({ top, faceCount, session = null }: Props) {
           </Animated.View>
           <Text style={styles.unit}>{t('faceName', { count: faceCount })}</Text>
         </GlassSurface>
-
-        {/* The running total gets its own pill rather than another row inside
-            the first: the top line is what this shot found, and merging the two
-            makes it ambiguous which number the big one is. */}
-        {session != null && (
-          <GlassSurface pill contentStyle={styles.sumPill}>
-            <Text style={styles.sumLabel}>{t('sumTotal')}</Text>
-            <Text style={styles.sumCount}>{session.faces}</Text>
-            <Text style={styles.unit}>{t('faceName', { count: session.faces })}</Text>
-            <View style={styles.dividerV} />
-            <Text style={styles.unit}>
-              {t('sumPhotos', { count: session.photos })}
-            </Text>
-          </GlassSurface>
-        )}
       </Animated.View>
     </View>
   );
 }
+
+/**
+ * Memoised for the same reason as the header pill: this is a GlassSurface, and
+ * a GlassSurface's core is an Android BlurView. The screen around it re-renders
+ * on every detection round, while this only has something new to say when the
+ * COUNT changes - which is far rarer than the boxes moving.
+ */
+export const ResultIsland = React.memo(ResultIslandInner);
 
 const styles = StyleSheet.create({
   anchor: {
@@ -129,27 +132,6 @@ const styles = StyleSheet.create({
 
   statusDot: { width: 7, height: 7, borderRadius: 3.5 },
 
-  sumPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 7,
-    paddingVertical: 7,
-    paddingHorizontal: 14,
-  },
-  sumLabel: {
-    color: COLORS.accent,
-    fontFamily: FONT.semibold,
-    fontSize: 11,
-    letterSpacing: 0.3,
-    textTransform: 'uppercase',
-  },
-  sumCount: {
-    color: COLORS.textPrimary,
-    fontFamily: FONT.semibold,
-    fontSize: 14,
-  },
-
   count: {
     color: COLORS.textPrimary,
     fontFamily: FONT.bold,
@@ -168,10 +150,4 @@ const styles = StyleSheet.create({
   },
 
   tail: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  dividerV: {
-    width: StyleSheet.hairlineWidth,
-    height: 16,
-    backgroundColor: COLORS.hairline,
-    marginRight: 1,
-  },
 });

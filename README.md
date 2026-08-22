@@ -1,13 +1,23 @@
 # Tally — Face Counter
 
-A React Native app that detects and counts **faces** in the camera frame. Press
-the shutter and the app scans **exactly one frame** with a WIDER FACE-trained
-YOLO26 running on TFLite on-device, freezes that frame, and lays bounding boxes
-over it so you can inspect, re-threshold and save the result.
+A React Native app that counts **faces** in the camera frame, live. There is no
+shutter: a WIDER FACE-trained YOLO26 runs on TFLite on-device as fast as the
+phone allows, boxes follow the faces between runs, and the count updates as you
+move the camera. A scan writes itself to history once the number holds still.
 
-One class, one colour, one number. Detection is fully on-device — no frame ever
-leaves the phone. History is backed by a Supabase account: signing in syncs
-scans (and their thumbnails) across devices and restores them after a reinstall.
+One class, one colour, one number. Detection is fully on-device — no frame
+leaves the phone. Recognition (putting a name to a face) does: the ArcFace
+embedding step runs on a server you host yourself, see
+[docs/arcface-server.md](docs/arcface-server.md). History is backed by a
+Supabase account: signing in syncs scans (and their thumbnails) across devices
+and restores them after a reinstall.
+
+> **Detection rate.** One pass measures ~440ms on a mid-range device (Tecno
+> LI6, GPU delegate, 411/411 nodes), so the count refreshes roughly twice a
+> second rather than every frame. The preview itself stays smooth — the frame
+> is drawn before detection runs, never after. A 320-input export of the same
+> model is roughly four times cheaper and is the intended next step; it needs
+> only `MODEL_SIZE` changed once the file exists.
 
 > The bundled model is an Ultralytics YOLO26 export, licensed **AGPL-3.0**.
 > Review the terms (or obtain a commercial licence) before shipping a
@@ -15,43 +25,45 @@ scans (and their thumbnails) across devices and restores them after a reinstall.
 
 ## Features
 
-- **One-shot scanning on command**, not continuous inference: the worklet runs the
-  model on exactly the next frame after the shutter is pressed, then switches to
-  the `frozen` state and stops rendering so the frozen image stays pinned to the
-  detections that came from it.
+- **Continuous detection, no shutter.** The worklet runs the model on the
+  camera thread whenever the previous run has finished (with a floor of 200ms
+  so a faster model cannot starve rendering), and reports back to JS. Boxes are
+  drawn from tracks, not raw detections, so they persist between runs instead
+  of blinking at 2Hz.
+- **Face tracking by overlap.** [`trackFaces`](src/shared/tracker.ts) matches
+  each round's detections to the faces already on screen (greedy, best overlap
+  first), so a face keeps one stable id while it moves, and survives a missed
+  round or two. That id is what recognition results are keyed by - a face is
+  identified once, not several times a second.
+- **Scans record themselves.** When the count stops changing for two seconds,
+  the scene is written to history with a snapshot. Keyed on the count itself,
+  so holding the camera on the same people records once rather than every two
+  seconds.
 - **YOLO26 trained on WIDER FACE, single class** — `[1, 3, 640, 640]` float32
   NCHW input, raw `[1, 5, 8400]` head (4 box coordinates + 1 score) with no NMS
   in the graph. Shapes read straight out of the FlatBuffer, not guessed — see
   [assets/models/README.md](assets/models/README.md).
-- **Two-pass detection.** Each scan runs the model twice on the same frame: once
-  letterboxed (`scaleMode: 'contain'`, full field of view) and once centre-cropped
-  (`'cover'`, which spends all 640px on the middle of the frame instead of 44% of
-  it on black bars). The two passes are mapped into frame space and merged with
-  greedy NMS — so edge faces survive and small central faces get found. The
-  model exports with `end2end: false`, meaning no NMS in the graph, so that same
-  merge step is what turns 8400 raw anchors per pass into final detections —
-  and what keeps the threshold slider meaningful, since nothing is discarded
-  before the app sees it.
-- **Live threshold on the captured photo.** Boxes are React Native views layered
-  over the frozen image rather than baked into it, so dragging the threshold
-  re-filters the photo you are already looking at — no re-capture. Boxes are only
-  burned into pixels at save time, via an offscreen Skia surface.
+- **One pass, whole frame.** The shutter used to run a second, centre-cropped
+  pass to catch small faces. At ~440ms each that would put the count a full
+  second behind the scene, so only the letterboxed pass survives - the number
+  has to describe what you can actually see.
+- **Face recognition.** MediaPipe FaceMesh (468 landmarks, on-device) gates on
+  head pose and supplies the five alignment points; the embedding itself comes
+  from an ArcFace server over HTTP (`POST /embed`). Names appear on the boxes as
+  each face is identified. Without a server configured, counting still works and
+  nobody is named.
 - **Native buffer rotation** (`enablePhysicalBufferRotation`) so the model always
   receives an upright image instead of one rotated 90° to match the sensor.
-- **Scan an existing photo.** Pick an image from the device library and it goes
-  through the same model, the same two passes and the same merge as a live capture.
-  The resizer only accepts camera `Frame`s, so this path builds the model input
-  with Skia instead — see [src/detection/scanImage.ts](src/detection/scanImage.ts).
-- **Tap any box for details**: the label and the model's confidence.
-- Camera controls: torch, front/back flip, 1×/2×/3×/5× zoom steps (steps beyond
-  `device.maxZoom` are dropped automatically), tap-to-focus, and a confidence
-  threshold slider (default `0.5`, user-configurable — see Settings below).
-- Haptic alert when faces are detected (toggle in Settings), and saving the
-  annotated image to the device photo library.
-- Adaptive portrait/landscape layout for every control cluster.
-- **A floating header** on the camera screen (History, Settings) alongside the
-  bottom toolbar (torch, library, running total, flip) — see
-  [`DetectorScreen`](src/screens/DetectorScreen.tsx).
+- **Tap any box for details**: the label, the model's confidence, and who the
+  face belongs to.
+- Camera controls: front/back flip and tap-to-focus on the viewfinder; zoom and
+  the confidence threshold live in Settings, since neither is something you
+  adjust shot by shot when there are no shots.
+- Haptic alert when a scan records itself (toggle in Settings).
+- Adaptive portrait/landscape layout.
+- **A floating header** on the camera screen (History, lens, Settings) — see
+  [`DetectorScreen`](src/screens/DetectorScreen.tsx). The bottom of the screen
+  is deliberately bare: there is nothing left to press.
 - **Account-gated with Supabase auth.** [`AuthScreen`](src/screens/AuthScreen.tsx)
   (email/password register or sign in) is the only thing rendered until
   [`useAuth`](src/hooks/useAuth.ts) reports a real, non-anonymous session — the
@@ -313,8 +325,6 @@ a binary committed once stays in the history for every future clone.
 |---|---|---|
 | `CAMERA` / `NSCameraUsageDescription` | Android, iOS | Frame source for scanning |
 | `VIBRATE` | Android | Haptic alert when faces are detected |
-| `READ_MEDIA_IMAGES` (API 33+) / `READ_EXTERNAL_STORAGE` (≤ 32) / `NSPhotoLibraryUsageDescription` | Android, iOS | Listing library photos so one can be picked and scanned |
-| `WRITE_EXTERNAL_STORAGE` | Android ≤ 28 | Saving the annotated image; from API 29 MediaStore handles it, so it is only requested on older devices |
 | `INTERNET` | Android | Metro dev server in debug builds, plus Supabase auth and history sync in every build |
 
 ## How it works
@@ -322,7 +332,7 @@ a binary committed once stays in the history for every future clone.
 A scan's lifecycle fits in three states: `idle` (preview) → `capturing` (scan the
 next frame) → `frozen` (camera off, image held).
 
-The shutter runs on the JS thread while scanning happens in a worklet, so the
+Detection happens in a worklet while the UI runs on the JS thread, so the
 command travels through a shared cell from `react-native-worklets`:
 
 ```ts
@@ -357,9 +367,9 @@ onFrame={(frame, render) => {
 }}
 ```
 
-The worklet deliberately does no filtering or merging. Both of those need the two
-passes expressed in one coordinate system, and the threshold has to stay editable
-after the shutter — so they live on the JS side as plain, unit-tested functions:
+The worklet deliberately does no filtering or tracking. Both need the frame's
+dimensions to reach one coordinate system, and both have to stay testable
+without a camera — so they live on the JS side as plain, unit-tested functions:
 
 ```ts
 // src/screens/DetectorScreen.tsx — inside onScanned
@@ -373,7 +383,7 @@ const merged = mergeDetections(
 ```
 
 Model coordinates live in the square the resizer produced, not in frame space, and
-the two passes use different squares. Getting a box onto the screen is therefore
+the model's square is not the frame's. Getting a box onto the screen is therefore
 two conversions: model square → frame space (`toFrameBox`, the only place that
 knows which pass a box came from), then frame space → screen pixels (`boxToScreen`,
 which undoes the canvas's `fit="cover"`):
@@ -384,19 +394,17 @@ const r = boxToScreen(detection, frameSize.w, frameSize.h, winW, winH);
 // → { left, top, width, height } in screen pixels
 ```
 
-The same `boxToScreen` runs again at save time against the snapshot's dimensions
-instead of the screen's, which is what paints the boxes into the saved JPEG
-([src/detection/annotate.ts](src/detection/annotate.ts)).
+The same `boxToScreen` maps the tracker's boxes onto the screen every time a
+detection round lands, which is what keeps the overlay aligned with the preview
+underneath it.
 
-Scanning a library photo reaches the same place by a different route. There is no
-`Frame` and therefore no resizer, so `scanImage.ts` draws the image into a 640×640
-offscreen Skia surface itself and reads the pixels back. That hand-built placement
-has to agree exactly with what `toFrameBox` assumes about the square, which is why
-it lives in `boxLayout.ts` as `modelDestRect` next to its counterpart, with a test
-asserting the two agree.
-
-Model details, the specs verified on a real device, and what must be re-checked
-when swapping models: [assets/models/README.md](assets/models/README.md).
+Face enrolment reaches the same place by a different route. It works from a
+still rather than the live stream, so there is no `Frame` and therefore no
+resizer: `scanImage.ts` draws the snapshot into a 640×640 offscreen Skia
+surface itself and reads the pixels back. That hand-built placement has to agree
+exactly with what `toFrameBox` assumes about the square, which is why
+`modelDestRect` and `toFrameBox` live in the same file and are tested against
+each other.
 
 ## Testing
 
@@ -483,12 +491,17 @@ ObjectDetector/
       en.ts            #   English catalog, typed against vi
       index.ts         #   i18n-js instance, locale detection/override, setLocale, useLocale, t()
     detection/         # The model pipeline, orchestrated only by DetectorScreen
-      annotate.ts      #   Burn boxes into the photo at save time (offscreen Skia)
-      modelInput.ts    #   Shared pixel-building for both TFLite models (NCHW)
-      runModel.ts      #   Model output parsing, shared by the camera and photo paths
-      scanImage.ts     #   Scan a library photo: Skia-built model input, both passes
+      modelInput.ts    #   Shared pixel-building for the TFLite models, and the
+                       #     JPEG crop the embedding server receives
+      runModel.ts      #   Model output parsing, called from the camera worklet
+      scanImage.ts     #   Scan a still (face enrolment): Skia-built model input
+      faceMesh.ts      #   FaceMesh: pose gate, alignment points, the mask
+      meshLandmarks.ts #   The landmark maths, free of Skia so it can be tested
+      meshTopology.ts  #   MediaPipe's 880-triangle tessellation (Apache-2.0)
+      embedClient.ts   #   POST /embed: 1-8 faces a call, base64 JPEG in, vectors
+                       #     out, with the model's name attached
     components/        # One file per component. HUD (detection boxes, photo
-                       #   picker, threshold slider, detail/history sheets) plus the
+                       #   threshold slider, detail/history sheets) plus the
                        #   shared primitives: GlassSurface, CtaButton, SegmentedTabs,
                        #   FormField, AmbientBackdrop, IconButton, Dialog (the app's own
                        #   Alert), icons (Skia) and modalIcons/Checkbox (plain View, for
@@ -533,19 +546,11 @@ ObjectDetector/
 - **The Skia label font must be a family that really exists on the device.**
   `'System'`, `'Roboto'` and the empty string all return a Typeface that looks
   valid but has no glyphs — text measures to `width = 0` and draws invisibly. On
-  Android only `'sans-serif'` works. This only applies to the save path in
-  `annotate.ts`; on-screen labels are RN text in the bundled Geist family.
-- **Zoom and torch may only be set after `onStarted`.** Setting them earlier makes
+  Android only `'sans-serif'` works. On-screen labels are RN text in the bundled
+  Geist family, so this no longer bites anywhere in the app.
+- **Zoom may only be set after `onStarted`.** Setting them earlier makes
   CameraX throw `Camera is not active`; the `OperationCanceledException` raised
   while the camera session restarts is harmless and is swallowed deliberately.
-- **A picked photo's URI is never a plain file**, on either platform: Android
-  returns `content://media/…` and iOS returns `ph://<localIdentifier>`. React
-  Native's `<Image>` resolves both, so the picker grid renders fine — but
-  `Skia.Data.fromURI` handles neither, and on Android it **hangs without ever
-  rejecting**, so the scan silently does nothing and no error is logged. Bytes
-  therefore go through `loadImageData()`: `fetch` + `FileReader` for
-  `content://`, and `CameraRoll.iosGetImageDataById(uri, { convertHeicImages:
-  true })` for `ph://` (which also converts HEIC, the iPhone default, to JPEG).
 - **Pixel layout depends on how the model was exported, not on which model it is.**
   Both bundled models were exported with Ultralytics 8.4.118, whose litert-torch
   path emits NCHW — their `serving_default_*` tensor names give that away, and it
@@ -590,7 +595,7 @@ ObjectDetector/
 
 | Library | Role |
 |---|---|
-| [`react-native-vision-camera`](https://github.com/mrousavy/react-native-vision-camera) | Camera, permissions, zoom, torch, focus |
+| [`react-native-vision-camera`](https://github.com/mrousavy/react-native-vision-camera) | Camera, permissions, zoom, focus |
 | [`react-native-vision-camera-skia`](https://github.com/mrousavy/react-native-vision-camera) | `SkiaCamera` — frame rendering through Skia, `takeSnapshot()` |
 | [`react-native-vision-camera-resizer`](https://github.com/mrousavy/react-native-vision-camera) | GPU-accelerated frame resize to the model's input size |
 | [`react-native-fast-tflite`](https://github.com/mrousavy/react-native-fast-tflite) | Loading and running `.tflite` via `runSync` inside the worklet |
@@ -598,9 +603,10 @@ ObjectDetector/
 | [`@shopify/react-native-skia`](https://github.com/Shopify/react-native-skia) | Drawing boxes and labels, encoding the image on save |
 | [`react-native-nitro-image`](https://github.com/mrousavy/react-native-nitro-image) | Writing Skia image bytes out to a temporary file |
 | [`@react-native-camera-roll/camera-roll`](https://github.com/react-native-cameraroll/react-native-cameraroll) | Saving the image to the photo library |
-| [`react-native-reanimated`](https://github.com/software-mansion/react-native-reanimated) | HUD and shutter animations |
+| [`react-native-reanimated`](https://github.com/software-mansion/react-native-reanimated) | HUD animations |
 | [`@react-native-community/blur`](https://github.com/Kureev/react-native-blur) | Frosted-glass backgrounds for the HUD cards |
 | [`@supabase/supabase-js`](https://github.com/supabase/supabase-js) | Auth (email/password) and the Postgres/storage backend for history sync |
+| [`axios`](https://github.com/axios/axios) | The one HTTP client, for the embedding server: base URL, bearer token, timeout, and every failure flattened into a single error type in one interceptor |
 | [`react-native-mmkv`](https://github.com/mrousavy/react-native-mmkv) | The one on-device key/value store — history/preview cache, settings, the locale override, and (via an async-shaped adapter) the session store `supabase-js` persists into |
 | [`i18n-js`](https://github.com/fnando/i18n-js) | Translation lookup, interpolation and locale fallback — see [`src/i18n/`](src/i18n) |
 

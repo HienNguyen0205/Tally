@@ -12,21 +12,14 @@ import {
   StyleSheet,
   Pressable,
   useWindowDimensions,
+  type GestureResponderEvent,
 } from 'react-native';
-import Animated, {
-  Easing,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-} from 'react-native-reanimated';
-import { useCameraPermission } from 'react-native-vision-camera';
-import { SkiaCamera } from 'react-native-vision-camera-skia';
+import { useCameraPermission, type Frame } from 'react-native-vision-camera';
 import {
-  Canvas,
-  Image as SkiaImage,
-  Skia,
-  type SkImage,
-} from '@shopify/react-native-skia';
+  SkiaCamera,
+  type SkiaOnFrameState,
+} from 'react-native-vision-camera-skia';
+import type { SkImage } from '@shopify/react-native-skia';
 import {
   useTensorflowModel,
   type TensorflowModelDelegate,
@@ -42,61 +35,77 @@ import {
   passesThreshold,
   type Detection,
 } from '../shared/detections';
-import { COLORS, EASE_OUT_EXPO, FONT } from '../shared/theme';
-import { summarise, totalOf } from '../shared/history';
+import {
+  EMPTY_TRACKS,
+  livingTracks,
+  trackFaces,
+  type TrackState,
+} from '../shared/tracker';
+import { COLORS, FONT } from '../shared/theme';
+import { summarise } from '../shared/history';
 import { t } from '../i18n';
 import { makePreview, makeThumbnail } from '../shared/thumbnail';
 import { useAlert } from '../hooks/useAlert';
-import { useSavePhoto } from '../hooks/useSavePhoto';
 import { useCameraControls } from '../hooks/useCameraControls';
 import { useScanHistory } from '../hooks/useScanHistory';
+import { useFaceIdentity } from '../hooks/useFaceIdentity';
+import { embedConfigured } from '../detection/embedClient';
 import type { useSettings } from '../hooks/useSettings';
 import { ResultIsland } from '../components/ResultIsland';
-import { ScanOverlay } from '../components/ScanOverlay';
 import { GlassSurface } from '../components/GlassSurface';
 import { CtaButton } from '../components/CtaButton';
 import { FocusRing } from '../components/FocusRing';
 import { IconButton } from '../components/IconButton';
-import { ThresholdSlider } from '../components/ThresholdSlider';
-import { ZoomSelector } from '../components/ZoomSelector';
-import { ReviewBar } from '../components/ReviewBar';
 import { LaunchScreen } from '../components/LaunchScreen';
-import { DetailSheet } from '../components/DetailSheet';
 import { useDialog } from '../components/Dialog';
 import { DetectionBox } from '../components/DetectionBox';
 import { HistorySheet } from '../components/HistorySheet';
-import { PhotoPicker, loadImageData } from '../components/PhotoPicker';
 import { SettingsScreen } from './SettingsScreen';
+import { EnrolFaceScreen } from './EnrolFaceScreen';
+import { FaceScanScreen } from './FaceScanScreen';
 import { readFrameDetections } from '../detection/runModel';
-import { scanImage } from '../detection/scanImage';
-import { annotate } from '../detection/annotate';
 
-// 'idle': preview, waiting for the shutter | 'capturing': scan exactly the next
-// frame | 'frozen': camera off, holding the scanned image still
-type Mode = 'idle' | 'capturing' | 'frozen';
+/**
+ * The shortest rest between two detection runs, in milliseconds.
+ *
+ * A floor, not the whole rule: the real rest is whichever is longer, this or
+ * however long the LAST pass took (see the frame processor). Detection and
+ * rendering share one thread, so a pass that starts again the instant it
+ * finishes leaves the preview almost nothing - which is what a stuttering
+ * viewfinder actually is.
+ *
+ * Measured on the test device (Tecno LI6, GPU delegate, 320 input): a pass
+ * costs **64-92ms**, so at this floor the thread spends about 28% of its time
+ * detecting and delivers 22-26 of the 30 frames a second it is asked for, with
+ * detection landing 3-4 times a second. The floor is what governs there - the
+ * adaptive half only takes over on a slower device or the CPU fallback, which
+ * is exactly what it is for.
+ *
+ * Lowering this buys tracking and spends preview: at 120ms detection reaches
+ * ~5/s and the preview drops to about 19fps. Raising it does the reverse.
+ * There is no third option short of moving inference off this thread.
+ */
+const DETECT_FLOOR_MS = 200;
 
-// The scan animation lingers after the image freezes so the scan is visible.
-const SCAN_ANIM_MS = 900;
+/**
+ * How long the count must hold still before the scan is written to history.
+ *
+ * There is no shutter any more, so this is what "a scan" means now: point the
+ * camera, let the number settle, and the moment it stops moving is the moment
+ * worth keeping.
+ */
+const STABLE_MS = 2000;
 
-const pressEase = Easing.bezier(...EASE_OUT_EXPO);
-
-// Familiar zoom steps; any step beyond the device's range is dropped.
+/** Familiar zoom steps; any step beyond the device's range is dropped. */
 const ZOOM_STEPS = [1, 2, 3, 5];
 
-// IconButton (40) plus the GlassSurface pill's own padding (BEZEL_PAD*2 + the
-// hairline borders) - measured from the identical bottom toolRow pill, which
-// wraps the same IconButtons. Used to keep ResultIsland clear of the header
-// pill above it without either one measuring the other at runtime.
-const HEADER_H = 54;
+/** Height of the header pill, for placing the result island under it. */
+const HEADER_H = 44;
 
-// GPU delegate: measured on a real device (Tecno LI6, both models float32),
-// Invoke runs clean for detector and classifier alike - "boat" comes back with
-// the same name as CPU (gondola), a few percent apart because floating-point
-// accumulates in a different order, not because anything is wrong. It was
-// switched off once while chasing an Invoke failure whose real culprit turned
-// out to be the model file (offset buffers - see assets/models/README.md).
+// GPU delegate: measured on a real device (Tecno LI6) - the detector delegates
+// 411/411 nodes and FaceMesh 99/99.
 //
-// Note the CPU fallback below only catches LOAD failures, not runtime ones.
+// The CPU fallback below only catches LOAD failures, not runtime ones.
 // 'android-gpu' exists on Android only; elsewhere it throws at load time, so
 // don't bother trying.
 const TRY_GPU = true;
@@ -107,6 +116,17 @@ const CPU_ONLY: TensorflowModelDelegate[] = [];
 // Matches the model's input tensor exactly: [1, 3, 640, 640] float32.
 // 'planar' because the shape is NCHW (channels first), 'float32' because the
 // resizer emits 0..1 - the scale YOLO wants.
+/**
+ * 30, not 15. Detection does not run any more often for it - that is gated
+ * separately - but every frame BETWEEN detections is a frame the preview can
+ * show, and at 15 there were not enough of them for the motion to look
+ * continuous.
+ *
+ * A module constant rather than a literal in the JSX: the same array every
+ * render, so nothing downstream has to work out that it did not change.
+ */
+const CAMERA_CONSTRAINTS = [{ fps: 30 }];
+
 const RESIZER_FORMAT = {
   width: MODEL_SIZE,
   height: MODEL_SIZE,
@@ -114,6 +134,46 @@ const RESIZER_FORMAT = {
   dataType: 'float32',
   pixelLayout: 'planar',
 } as const;
+
+/**
+ * History, lens and Settings in one floating pill.
+ *
+ * Its own memoised component purely for the cost of NOT redrawing it. The
+ * screen re-renders on every detection round - several times a second - and
+ * this subtree is three Reanimated buttons inside a GlassSurface, whose core
+ * is a real Android BlurView. Blurring the same pixels three times a second
+ * to produce an identical result is the kind of work that does not show up in
+ * any one profile line and shows up in every frame.
+ *
+ * The callbacks it takes must be stable, or the memo is decoration.
+ */
+const HeaderPill = React.memo(function HeaderPillInner({
+  top,
+  onHistory,
+  onFlip,
+  onSettings,
+}: {
+  top: number;
+  onHistory: () => void;
+  onFlip: () => void;
+  onSettings: () => void;
+}) {
+  return (
+    <GlassSurface
+      pill
+      style={[styles.header, { top }]}
+      contentStyle={styles.headerRow}
+    >
+      <IconButton name="clock" label={t('openHistory')} onPress={onHistory} />
+      <IconButton name="flip" label={t('flipCamera')} onPress={onFlip} />
+      <IconButton
+        name="settings"
+        label={t('openSettings')}
+        onPress={onSettings}
+      />
+    </GlassSurface>
+  );
+});
 
 /** Status screen (permission, loading, error) - a two-layer floating card. */
 function StateScreen({
@@ -157,59 +217,88 @@ interface Props {
   /** Drops guest mode, handing control back to App.tsx's Root - which falls
    *  back to AuthScreen the moment there is still no real session. */
   onLeaveGuest: () => void;
+  /** Signed in but with no face on file yet - show the enrolment overlay. */
+  needsEnrolment: boolean;
+  /** Puts the enrolment overlay back up - Settings offers this so a face can
+   *  be re-scanned without reinstalling or waiting for a fresh sign-in. */
+  onReEnrol: () => void;
+  onEnrolmentSettled: () => void;
 }
 
-export function DetectorScreen({ settings, guest, onLeaveGuest }: Props) {
+/**
+ * The camera screen: a live viewfinder that counts faces continuously.
+ *
+ * There is no shutter. Detection runs on the camera thread as fast as the
+ * model allows, boxes follow the faces between runs (shared/tracker), and a
+ * scan writes itself to history once the count holds still. What used to be a
+ * capture app - freeze, review, save, retake - is a viewfinder now, and the
+ * modes, the review bar, the photo picker and the torch went with it.
+ *
+ * What this screen draws is deliberately thin: the camera, a box per face, a
+ * count. The 468-point wireframe that used to sit over every face went to the
+ * scan preview (FaceScanScreen), where it is drawn once on a frozen frame
+ * instead of composited over a live one - a full-screen Skia canvas redrawn on
+ * every state change is not a detail on a viewfinder, it is the budget.
+ *
+ * Detection and rendering share the camera thread, so the frame processor
+ * rests for as long as the last pass cost (see DETECT_FLOOR_MS) rather than
+ * running flat out. The shutter used to run a second, zoomed pass to catch
+ * small faces; at that price it would put the count a full second behind the
+ * scene it describes, so only the whole-frame pass survives.
+ */
+export function DetectorScreen({
+  settings,
+  guest,
+  onLeaveGuest,
+  needsEnrolment,
+  onReEnrol,
+  onEnrolmentSettled,
+}: Props) {
   const { hasPermission, requestPermission } = useCameraPermission();
   const insets = useSafeAreaInsets();
 
   const { width: winW, height: winH } = useWindowDimensions();
-  const landscape = winW > winH;
 
-  const [mode, setMode] = useState<Mode>('idle');
-  const [scanning, setScanning] = useState(false);
-  // Scanning a library photo takes real time, unlike the camera path which
-  // already has its result by the time it reports back. This flag keeps the
-  // animation up until the work finishes.
-  const [scanBusy, setScanBusy] = useState(false);
-  const [result, setResult] = useState<Detection[] | null>(null);
+  const [tracked, setTracked] = useState<TrackState>(EMPTY_TRACKS);
   const [frameSize, setFrameSize] = useState<{ w: number; h: number } | null>(
     null,
   );
-  const [picked, setPicked] = useState<Detection | null>(null);
-  // Non-null = reviewing a library photo rather than a freshly captured frame.
-  const [photo, setPhoto] = useState<SkImage | null>(null);
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
-  // Progress through a multi-photo run; null for a single photo or the camera.
-  const [batch, setBatch] = useState<{ done: number; total: number } | null>(
+  /**
+   * The face whose scan preview is open - its id, and the box as it was when
+   * it was tapped.
+   *
+   * The box is copied rather than looked up each render because the preview is
+   * frozen: the person carries on moving, their track eventually dies, and the
+   * scan on screen still has to be the one they asked for.
+   */
+  const [picked, setPicked] = useState<{ id: number; box: Detection } | null>(
     null,
   );
-  // Ids the last batch produced, so its rows can be summarised in the sheet.
-  const [lastBatch, setLastBatch] = useState<string[] | null>(null);
-  // Ids collected while adding captures up; null when that mode is off. Counting
-  // a place usually means several shots from several angles, and until now the
-  // running total lived in the user's head.
-  const [session, setSession] = useState<string[] | null>(null);
-  // Boxes are drawn over the image, so changing the threshold re-filters
-  // immediately - no need to shoot again. Seeded from Settings rather than the
-  // constant directly: useSettings reads MMKV synchronously, so this initial
-  // value is already the user's saved default, not a placeholder that then
-  // jumps a frame later.
-  const [threshold, setThreshold] = useState(settings.defaultThreshold);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const cam = useCameraControls();
+  const onAlert = useAlert(settings.hapticsEnabled);
+  const { dialog } = useDialog();
 
-  // Was useClassFilter, which also tracked which of the detector's 80 classes
-  // were hidden. A single-class detector leaves only the threshold to filter
-  // on, and that is one line.
-  const visible = useMemo(
-    () => (result ?? []).filter(d => passesThreshold(d, threshold)),
-    [result, threshold],
-  );
+  // The threshold lives in Settings now. It used to have a slider on the
+  // review toolbar, which was the right place while a frozen frame could be
+  // re-filtered without shooting again - there is no frozen frame any more,
+  // and one control in one place beats the same control in two.
+  const threshold = settings.defaultThreshold;
 
-  const { state: saveState, save, reset: resetSave } = useSavePhoto();
+  // Enrolment is a selfie. Swing round to the front lens as the overlay opens
+  // rather than making the first thing a new account does be hunting for the
+  // flip button. Not swung back afterwards on purpose: the lens you finished
+  // on is the lens you asked for.
+  const { selectLens } = cam;
+  useEffect(() => {
+    if (needsEnrolment) selectLens('front');
+  }, [needsEnrolment, selectLens]);
+
+  const visible = useMemo(() => livingTracks(tracked), [tracked]);
+  const faceCount = visible.length;
+
   const {
     records: history,
     add: addHistory,
@@ -222,14 +311,9 @@ export function DetectorScreen({ settings, guest, onLeaveGuest }: Props) {
     canLoadOlder,
   } = useScanHistory(guest);
 
-  // The result already written to history. Compared by identity: a new scan
-  // always makes a new array, while moving the threshold or hiding a class does
-  // not - so adjusting the view afterwards cannot log a second entry.
-  const recorded = useRef<Detection[] | null>(null);
-
-  /** Writes one finished scan to history and returns its id. */
+  /** Writes one settled scene to history. */
   const recordScan = useCallback(
-    (kept: Detection[], source: SkImage | null): string => {
+    (kept: Detection[], source: SkImage | null) => {
       const at = Date.now();
       const id = `${at}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -246,43 +330,9 @@ export function DetectorScreen({ settings, guest, onLeaveGuest }: Props) {
       // write is not awaited - by now the image is already on screen.
       const preview = source != null ? makePreview(source) : null;
       if (preview != null) addPreview(id, preview);
-
-      // An updater, not `session` read from the closure: this callback is held
-      // by the scan effect and would otherwise need `session` in its deps,
-      // re-running the scan pipeline on every tap of the toggle.
-      setSession(prev => (prev == null ? null : [...prev, id]));
-      return id;
     },
     [addHistory, addPreview],
   );
-
-  // Derived from `history`, not accumulated in its own counters: a row deleted
-  // in the history sheet has to drop out of the running total as well.
-  const sessionTotal = useMemo(
-    () =>
-      session == null
-        ? null
-        : totalOf(history.filter(r => session.includes(r.id))),
-    [session, history],
-  );
-
-  const press = useSharedValue(0);
-  const shutterStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: 1 - 0.05 * press.value }],
-  }));
-
-  const onAlert = useAlert(settings.hapticsEnabled);
-  // `show` renamed at the call site: `useAlert` above is the haptic buzz, and
-  // two things called alert in one component is one too many.
-  const { show: showDialog, dialog } = useDialog();
-
-  // A cell readable and writable from both the JS thread and the worklet thread:
-  // the shutter (JS) writes here, the worklet reads it each frame to decide
-  // whether this is the frame to scan.
-  const scanCmd = useMemo(() => createSynchronizable<Mode>('idle'), []);
-  useEffect(() => {
-    scanCmd.setBlocking(mode);
-  }, [mode, scanCmd]);
 
   // --- Loading the models ---
   // Try GPU first, fall back to CPU if that fails.
@@ -301,189 +351,329 @@ export function DetectorScreen({ settings, guest, onLeaveGuest }: Props) {
   const model =
     objectDetection.state === 'loaded' ? objectDetection.model : undefined;
 
-  // The tensor shapes/types the runtime actually sees - check these against
-  // assets/models/README.md whenever the model changes, because getting it
-  // wrong raises no error at all.
-  useEffect(() => {
-    if (model == null) return;
-    console.log('[model] inputs', JSON.stringify(model.inputs));
-    console.log('[model] outputs', JSON.stringify(model.outputs));
-    console.log('[model] delegates', JSON.stringify(model.delegates));
-  }, [model]);
+  // Recognition. Only needed once a face has been found, so a failure to load
+  // costs the identity line and nothing else - unlike the detector, which the
+  // whole screen waits on.
+  //
+  // ArcFace is not here any more: it runs on a server now (see
+  // docs/arcface-server.md), which is what took 22MB and a CPU-only Vision
+  // Transformer out of this app.
+  const meshModel = useTensorflowModel(
+    require('../../assets/models/mediapipe_face-tflite-float/face_landmark_detector.tflite'),
+    delegates,
+  );
+  const mesh = meshModel.state === 'loaded' ? meshModel.model : undefined;
+
+  const cameraRef = cam.camera;
+  const takeSnapshot = useCallback(() => {
+    // Never throws. The camera's frame texture is disposed between frames and
+    // whenever the session restarts, and both callers here ask for a snapshot
+    // from outside the frame callback - the history timer two seconds after
+    // the count settled, and the identity pump partway through an async read.
+    // Landing in that gap is normal, not exceptional; it threw an uncaught
+    // "Attempted to access a disposed object" and took the screen down with
+    // it. Every caller already handles null: the scan is recorded without a
+    // thumbnail, the face reads as unreadable.
+    try {
+      return cameraRef.current?.takeSnapshot() ?? null;
+    } catch (e) {
+      console.warn('[DetectorScreen] no snapshot available', e);
+      return null;
+    }
+  }, [cameraRef]);
+
+  /**
+   * Whether putting names to faces is switched on at all.
+   *
+   * Read once: it is an environment variable, so it cannot change while the
+   * app runs. With no server configured every face still went through the
+   * whole read - a snapshot, an offscreen Skia render, a 110,000-element
+   * float loop, a FaceMesh inference, a JPEG encode - before failing at a
+   * network call that was never going to happen. That is the single most
+   * expensive thing this screen can do, done entirely for nothing.
+   */
+  const recognising = useMemo(() => embedConfigured(), []);
+
+  const { identities, reset: resetIdentity } = useFaceIdentity(
+    mesh,
+    // Every track, not just the visible ones: a face blinking out for a round
+    // is still the same person, and the hook needs to know that to avoid
+    // reading them again.
+    tracked.tracks,
+    takeSnapshot,
+    // Guests have no session, so fetchProfiles would come back empty and every
+    // face would read as unknown - say nothing rather than say "not enrolled"
+    // about people who may well be.
+    !guest && recognising,
+  );
 
   // TFLite does NOT fall back to CPU on its own: a device that cannot build the
-  // GPU delegate fails outright while creating the interpreter. Without this
-  // catch the app is dead on exactly those devices - which still install it,
-  // because the library declares required="false".
+  // GPU delegate fails the load outright and stays failed. Without this catch
+  // the app is dead on exactly those devices - which still install it.
   useEffect(() => {
-    if (objectDetection.state === 'error' && delegates.length > 0) {
+    if (objectDetection.state === 'error' && !gpuFailed) {
       console.warn(
         '[DetectorScreen] GPU delegate unavailable, falling back to CPU',
         objectDetection.error,
       );
       setGpuFailed(true);
     }
-  }, [objectDetection, delegates]);
+  }, [objectDetection, gpuFailed]);
 
-  // --- Two passes, two ways of fitting the frame into the model's square ---
-  // Squeezing a 16:9 portrait frame into a square leaves 44% of the input width
-  // as black bars, shrinking objects to a few dozen pixels and losing them. So a
-  // second 'cover' pass spends all 640px on the middle of the frame, and the two
-  // are merged: the edges survive and small objects still register. It also
-  // lifts the ceiling from 25 detections per pass to 50.
-  const { resizer: wideResizer, error: wideError } = useResizer({
+  // One pass, over the whole frame. The shutter used to run a second, zoomed
+  // pass to catch small faces; at ~440ms each that would put the count a
+  // second behind the scene it describes.
+  const { resizer, error: resizerError } = useResizer({
     ...RESIZER_FORMAT,
     scaleMode: 'contain',
   });
-  const { resizer: tightResizer, error: tightError } = useResizer({
-    ...RESIZER_FORMAT,
-    scaleMode: 'cover',
-  });
-  const resizerError = wideError ?? tightError;
+
+  // Shared with the worklet: when the last detection started.
+  const lastDetect = useMemo(() => createSynchronizable<number>(0), []);
+  /**
+   * 1 while a detection result is on its way to the JS thread and has not been
+   * taken yet.
+   *
+   * Back-pressure, and it is not optional. The camera thread and the JS thread
+   * run independently: JS can be busy for a while (a FaceMesh run, a snapshot,
+   * a render with a few thousand mesh points in it) while the camera thread
+   * happily keeps detecting and calling scheduleOnRN. Those calls queue. When
+   * JS finally comes up for air it processes the whole backlog in one go, each
+   * entry setting state twice, and React ends the burst with "maximum update
+   * depth exceeded" - which is exactly what happened.
+   *
+   * With this, a frame is only detected if the last result has been consumed.
+   * Dropping a detection costs nothing: the next frame is along in
+   * milliseconds, and a result nobody has read yet is already stale.
+   */
+  const pending = useMemo(() => createSynchronizable<number>(0), []);
+  /** How long the last detection pass took, in milliseconds. Measured rather
+   *  than assumed: it changes with the model, the delegate and the device. */
+  const lastCost = useMemo(() => createSynchronizable<number>(0), []);
 
   useEffect(() => {
     if (!hasPermission) requestPermission();
   }, [hasPermission, requestPermission]);
 
   // --- The worklet reports back to the JS thread ---
-  const onScanned = useCallback(
-    (wide: Detection[], tight: Detection[], frameW: number, frameH: number) => {
-      // Map into frame space BEFORE merging - comparing raw coordinates from two
-      // different squares directly produces nonsense.
-      const merged = mergeDetections(
-        [
-          wide.map(d => ({ ...d, ...toFrameBox(d, 'contain', frameW, frameH) })),
-          tight.map(d => ({ ...d, ...toFrameBox(d, 'cover', frameW, frameH) })),
-        ],
-        NMS_IOU,
-      );
-
-      setResult(merged);
-      setFrameSize({ w: frameW, h: frameH });
-      setMode('frozen'); // stop the camera now, hold exactly the scanned frame
-
-      const faces = merged.filter(d => passesThreshold(d, threshold)).length;
-      if (faces > 0) onAlert();
-    },
-    [onAlert, threshold],
-  );
-
-  /**
-   * Scanning library photos: same model, same two passes, same merge as a shot.
-   *
-   * A batch runs one photo at a time, showing each as it goes, and writes its
-   * own history entries. It cannot lean on the effect below, which deliberately
-   * waits for the whole run to finish - by then the intermediate results are
-   * gone. The last entry is suppressed there via `recorded` instead of being
-   * written twice.
-   */
-  const onPickPhotos = useCallback(
-    async (uris: string[]) => {
-      setPickerOpen(false);
-      if (model == null || uris.length === 0) return;
-
-      setScanBusy(true);
-      setResult(null);
-      setPicked(null);
-      resetSave();
-      setMode('frozen');
-
-      const ids: string[] = [];
-      let faces = 0;
-
+  const onDetected = useCallback(
+    (found: Detection[], frameW: number, frameH: number) => {
       try {
-        for (const [i, uri] of uris.entries()) {
-          setBatch(uris.length > 1 ? { done: i, total: uris.length } : null);
+        // NMS still has to run, even though there is only one pass now.
+        // `parseDetections` hands back every anchor over the floor, and one face
+        // lights up a whole cluster of neighbouring anchors - the capture path
+        // merged them and this one did not, so a single face arrived as eight
+        // overlapping boxes, eight tracks, eight identity reads, and a count of
+        // eight.
+        const kept = mergeDetections(
+          [
+            found
+              .filter(d => passesThreshold(d, threshold))
+              .map(d => ({
+                ...d,
+                ...toFrameBox(d, 'contain', frameW, frameH),
+              })),
+          ],
+          NMS_IOU,
+        );
 
-          // Decode first, animation off: there is nothing to scan yet, and
-          // laying the animation over the camera preview reads as scanning the
-          // scene in front of you rather than the photo just chosen.
-          const image = Skia.Image.MakeImageFromEncoded(
-            await loadImageData(uri),
-          );
-          if (image == null) throw new Error('could not decode the image');
-
-          setPhoto(image);
-          setFrameSize({ w: image.width(), h: image.height() });
-          setResult(null);
-          setScanning(true);
-
-          // Yield a frame so React paints the image first. Without this,
-          // building the input (Skia plus a pixel loop) runs in the same tick
-          // and the animation appears before the image does.
-          await new Promise<void>(resolve =>
-            requestAnimationFrame(() => resolve()),
-          );
-
-          const found = await scanImage(model, image);
-          if (found == null) {
-            throw new Error('could not create the processing surface');
-          }
-          setResult(found);
-
-          const kept = found.filter(d => passesThreshold(d, threshold));
-          faces += kept.length;
-
-          const id = recordScan(kept, image);
-          ids.push(id);
-          // The effect below would otherwise log this last result a second time.
-          recorded.current = found;
-        }
-
-        if (faces > 0) onAlert();
-        // One photo stays on screen as before. A batch has nothing useful left
-        // showing - only the last image - so hand over to the sheet that can
-        // show every result at once.
-        if (ids.length > 1) {
-          setLastBatch(ids);
-          setHistoryOpen(true);
-        }
-      } catch (e) {
-        console.warn('[DetectorScreen] library photo scan failed', e);
-        setPhoto(null);
-        setMode('idle');
-        // Say it out loud: tapping a photo and having nothing happen just reads
-        // as a broken app.
-        showDialog({ title: t('scanFailed'), message: String(e) });
+        // Same numbers, same object: the frame size only ever changes when
+        // the device rotates, but a fresh object every round is a fresh
+        // render every round, for nothing. React bails out on an unchanged
+        // reference.
+        setFrameSize(prev =>
+          prev != null && prev.w === frameW && prev.h === frameH
+            ? prev
+            : { w: frameW, h: frameH },
+        );
+        setTracked(prev => trackFaces(prev, kept));
       } finally {
-        setBatch(null);
-        setScanBusy(false);
-        setScanning(false);
+        // Taken. The camera thread may detect again - and this has to happen
+        // even if the work above threw, or one bad round stops detection for
+        // the rest of the session with nothing on screen to say why.
+        pending.setBlocking(0);
       }
     },
-    [model, threshold, onAlert, resetSave, recordScan, showDialog],
+    [threshold, pending],
   );
 
-  // Let the scan animation run on a little so the feedback registers. Skipped
-  // while real work is in flight - then the work itself sets the duration.
+  // Writes a scan once the count settles.
+  //
+  // Keyed on the count alone, which is what makes this a debounce rather than
+  // a timer: any change to the number tears the effect down and starts the two
+  // seconds again, and a number that never changes never fires twice. Hold the
+  // camera on the same three people all afternoon and it records once.
+  //
+  // Everything it needs at that moment comes through a ref, so the boxes being
+  // redrawn - which happens on every detection round - cannot restart the
+  // clock. Only the count may do that.
+  const latest = useRef({ visible, takeSnapshot, recordScan, onAlert });
+  latest.current = { visible, takeSnapshot, recordScan, onAlert };
   useEffect(() => {
-    if (!scanning || scanBusy) return;
-    const timer = setTimeout(() => setScanning(false), SCAN_ANIM_MS);
+    if (faceCount === 0) return;
+    const timer = setTimeout(() => {
+      const now = latest.current;
+      now.recordScan(
+        now.visible.map(track => track.box),
+        now.takeSnapshot(),
+      );
+      now.onAlert();
+    }, STABLE_MS);
     return () => clearTimeout(timer);
-  }, [scanning, scanBusy]);
+  }, [faceCount]);
 
-  // If the box whose details are open drops below the threshold, the sheet has
-  // to close with
-  // it, or it points at something no longer on screen.
-  useEffect(() => {
-    if (picked == null) return;
-    if (!passesThreshold(picked, threshold)) {
-      setPicked(null);
+  const openHistory = useCallback(() => setHistoryOpen(true), []);
+  const openSettings = useCallback(() => setSettingsOpen(true), []);
+
+  /**
+   * The frame processor, held stable across renders.
+   *
+   * This was an arrow written inline in the JSX, which made it a NEW function
+   * on every render - and this screen re-renders several times a second, once
+   * per detection round. A changed function prop on a Fabric view is a props
+   * update sent across to native, so the camera was being handed a fresh frame
+   * processor to install two or three times a second while it was trying to
+   * deliver thirty frames in that same second.
+   *
+   * Now it is rebuilt only when something it actually closes over changes: the
+   * models, the resizer, and the callback that carries the threshold.
+   */
+  const onFrame = useCallback(
+    (
+      frame: Frame,
+      render: (draw: (state: SkiaOnFrameState) => void) => void,
+    ) => {
+      'worklet';
+
+      // Detect BEFORE rendering, never after.
+      //
+      // This was the other way round for a while, to get each frame on screen
+      // without waiting half a second for the model. It cost the detector its
+      // input: render() consumes the frame texture, so the resize that
+      // followed handed the model an empty buffer and it returned, quite
+      // correctly, nothing at all. A face in front of the lens read as zero -
+      // no error, no warning, just a camera that had stopped seeing.
+      //
+      // Frames that are not being detected still render immediately, which is
+      // most of them: only the detection frame pays the wait.
+
+      // Rest for at least as long as the last pass cost, so rendering gets
+      // about half this thread no matter what the model costs.
+      const rest = Math.max(DETECT_FLOOR_MS, lastCost.getDirty());
+      const detect =
+        model != null &&
+        resizer != null &&
+        // Nothing already queued for the JS thread. Without this the two
+        // threads decouple: JS blocks on a face read while the camera thread
+        // keeps detecting and queueing, and the backlog lands in one burst
+        // that React ends with "maximum update depth exceeded". A dropped
+        // detection costs nothing - the next frame is milliseconds away and an
+        // unread result is stale already.
+        pending.getDirty() === 0 &&
+        // Date.now, not performance.now: both exist on the worklet runtime,
+        // and only this one is in the type surface here.
+        Date.now() - lastDetect.getDirty() >= rest;
+
+      if (detect) {
+        pending.setBlocking(1);
+        const started = Date.now();
+        const found = readFrameDetections(model!, resizer!, frame);
+        // Both stamps taken at the END: what the next round has to wait out is
+        // the gap in which this thread is free to render, not the gap between
+        // two start times.
+        const finished = Date.now();
+        lastCost.setBlocking(finished - started);
+        lastDetect.setBlocking(finished);
+        // Frame size goes along: JS needs it to map boxes into frame space.
+        scheduleOnRN(onDetected, found, frame.width, frame.height);
+      }
+
+      render(({ frameTexture, canvas }) => {
+        canvas.drawImage(frameTexture, 0, 0);
+      });
+
+      frame.dispose();
+    },
+    [model, resizer, onDetected, lastCost, lastDetect, pending],
+  );
+
+  const { setCameraReady } = cam;
+  const onStarted = useCallback(() => setCameraReady(true), [setCameraReady]);
+  const onStopped = useCallback(() => setCameraReady(false), [setCameraReady]);
+
+  const onCameraError = useCallback((e: unknown) => {
+    // CameraX cancels zoom commands while the session is restarting (flipping
+    // the lens, Fast Refresh). Harmless: the next set lands. Swallow only this
+    // one, everything else must stay visible.
+    const msg = String(e);
+    if (
+      msg.includes('OperationCanceledException') ||
+      msg.includes('Camera is not active')
+    ) {
+      return;
     }
-  }, [picked, threshold]);
+    console.warn('[Camera]', e);
+  }, []);
 
-  // Logs a camera capture once it has settled. A batch writes its own entries
-  // as it goes and marks `recorded`, so this only ever fires for the shutter.
-  useEffect(() => {
-    if (result == null || scanning || scanBusy) return;
-    if (recorded.current === result) return;
-    recorded.current = result;
+  const { focusAt } = cam;
+  const onFocusTap = useCallback(
+    (e: GestureResponderEvent) => {
+      const { locationX, locationY } = e.nativeEvent;
+      focusAt(locationX, locationY);
+    },
+    [focusAt],
+  );
 
-    // Same source the save button uses: the library photo, or the frozen frame.
-    recordScan(visible, photo ?? cam.camera.current?.takeSnapshot() ?? null);
-  }, [result, scanning, scanBusy, photo, visible, recordScan, cam.camera]);
+  const { camera, device, cameraReady, zoom } = cam;
 
-  const { camera, device } = cam;
+  /**
+   * The camera element itself, rebuilt only when the camera's own inputs change.
+   *
+   * Not a decoration. SkiaCamera does not hand the preview to a SurfaceView -
+   * it copies each rendered frame to a CPU SkImage and pushes it to the JS
+   * thread, where the new image is stored and the previous one disposed
+   * (see updatePreviewTexture in the library). The preview is therefore a
+   * canvas this tree redraws, and every re-render of this screen was another
+   * chance to redraw it in the instant between those two operations. Measured:
+   * one frame in forty came back completely black with the overlays still
+   * drawn on top of it.
+   *
+   * Holding the element steady means a detection round updates the boxes and
+   * leaves the preview alone.
+   */
+  const cameraView = useMemo(
+    () =>
+      device == null ? null : (
+        <SkiaCamera
+          ref={camera}
+          style={StyleSheet.absoluteFill}
+          device={device}
+          isActive
+          pixelFormat="yuv"
+          constraints={CAMERA_CONSTRAINTS}
+          zoom={cameraReady ? zoom : undefined}
+          onStarted={onStarted}
+          onStopped={onStopped}
+          onError={onCameraError}
+          // Rotate the buffer upright BEFORE it reaches us. Without this the
+          // frame keeps the sensor's orientation (landscape while the phone is
+          // held upright) - the model sees people lying on their side, detects
+          // poorly and the boxes land badly off.
+          enablePhysicalBufferRotation={true}
+          onFrame={onFrame}
+        />
+      ),
+    [
+      camera,
+      device,
+      cameraReady,
+      zoom,
+      onStarted,
+      onStopped,
+      onCameraError,
+      onFrame,
+    ],
+  );
 
   if (device == null) {
     return <StateScreen eyebrow={t('deviceEyebrow')} title={t('noCamera')} />;
@@ -500,13 +690,7 @@ export function DetectorScreen({ settings, guest, onLeaveGuest }: Props) {
     );
   }
 
-  // An error while the GPU delegate is still in play is only an intermediate
-  // step - the effect above is reloading on CPU. Don't flash an error screen and
-  // snatch it back.
-  if (
-    objectDetection.state === 'loading' ||
-    (objectDetection.state === 'error' && delegates.length > 0)
-  ) {
+  if (objectDetection.state === 'loading') {
     return <LaunchScreen status={t('loadingModel')} />;
   }
 
@@ -530,116 +714,24 @@ export function DetectorScreen({ settings, guest, onLeaveGuest }: Props) {
     );
   }
 
-  const faceCount = visible.length;
-
-  const zoomSteps = ZOOM_STEPS.filter(z => z <= device.maxZoom);
-
-  const reviewing = mode === 'frozen' && !scanning;
-  // The toolbar exists in two shapes: camera buttons while composing, the
-  // threshold while reviewing. An open detail sheet takes the space outright.
-  const showTools = (mode === 'idle' || reviewing) && picked == null;
+  // Enrolment borrows this screen's camera, so it also has to borrow the
+  // screen: every control hides while it is up, and it draws its own.
+  const enroling = needsEnrolment && model != null && mesh != null;
+  const showTools = picked == null && !enroling;
   // Below the header pill, with a gap - same number for portrait and
-  // landscape, since the header now sits at the same top-right spot in both.
+  // landscape, since the header sits at the same top-right spot in both.
   const resultTop = insets.top + 12 + HEADER_H + 10;
 
   return (
     <View style={styles.container}>
-      <SkiaCamera
-        ref={camera}
-        style={StyleSheet.absoluteFill}
-        device={device}
-        isActive={mode !== 'frozen'}
-        pixelFormat="yuv"
-        constraints={[{ fps: 15 }]}
-        zoom={cam.cameraReady ? cam.zoom : undefined}
-        torchMode={cam.cameraReady ? cam.torch : undefined}
-        onStarted={() => cam.setCameraReady(true)}
-        onStopped={() => cam.setCameraReady(false)}
-        onError={e => {
-          // CameraX cancels zoom/torch commands while the session is restarting
-          // (flipping the lens, Fast Refresh). Harmless: the next set lands.
-          // Swallow only this one, everything else must stay visible.
-          const msg = String(e);
-          if (
-            msg.includes('OperationCanceledException') ||
-            msg.includes('Camera is not active')
-          ) {
-            return;
-          }
-          console.warn('[Camera]', e);
-        }}
-        // Rotate the buffer upright BEFORE it reaches us. Without this the frame
-        // keeps the sensor's orientation (landscape while the phone is held
-        // upright) → the model sees people lying on their side, detects poorly
-        // and the boxes land badly off.
-        enablePhysicalBufferRotation={true}
-        // Skipping the render after capture is deliberate, to freeze the image.
-        warnIfRenderSkipped={false}
-        onFrame={(frame, render) => {
-          'worklet';
-
-          const cmd = scanCmd.getDirty();
-
-          // Capture is done: drop every frame after it (the camera is winding
-          // down). Stop rendering too, so the canvas holds exactly the scanned
-          // frame - otherwise the image shown is newer than the boxes drawn.
-          if (cmd === 'frozen') {
-            frame.dispose();
-            return;
-          }
-
-          if (
-            cmd === 'capturing' &&
-            model != null &&
-            wideResizer != null &&
-            tightResizer != null
-          ) {
-            const wide = readFrameDetections(model, wideResizer, frame);
-            const tight = readFrameDetections(model, tightResizer, frame);
-
-            // Latch right here (rather than waiting a React state round trip) so
-            // later frames cannot scan over the shot just taken.
-            scanCmd.setBlocking('frozen');
-            // Send the frame size along: JS needs it to map boxes into frame
-            // space.
-            scheduleOnRN(onScanned, wide, tight, frame.width, frame.height);
-          }
-
-          render(({ frameTexture, canvas }) => {
-            canvas.drawImage(frameTexture, 0, 0);
-          });
-
-          frame.dispose();
-        }}
-      />
-
-      {/* The library photo, over the frozen camera canvas. Drawn from the very
-          SkImage handed to the model so EXIF cannot drift; fit="cover" matches
-          boxToScreen. */}
-      {photo != null && (
-        <Canvas style={StyleSheet.absoluteFill}>
-          <SkiaImage
-            image={photo}
-            x={0}
-            y={0}
-            width={winW}
-            height={winH}
-            fit="cover"
-          />
-        </Canvas>
-      )}
+      {cameraView}
 
       {/* Focus. Sits below every button so it cannot steal their taps. */}
-      {mode === 'idle' && (
-        <Pressable
-          style={StyleSheet.absoluteFill}
-          accessibilityLabel={t('tapToFocus')}
-          onPress={e => {
-            const { locationX, locationY } = e.nativeEvent;
-            cam.focusAt(locationX, locationY);
-          }}
-        />
-      )}
+      <Pressable
+        style={StyleSheet.absoluteFill}
+        accessibilityLabel={t('tapToFocus')}
+        onPress={onFocusTap}
+      />
 
       {cam.focusPoint != null && (
         <FocusRing
@@ -649,221 +741,43 @@ export function DetectorScreen({ settings, guest, onLeaveGuest }: Props) {
         />
       )}
 
-      {/* Tap outside a box to close the detail sheet. Sits below the boxes so
-          tapping a different box still switches, rather than being swallowed. */}
-      {picked != null && (
-        <Pressable
-          style={StyleSheet.absoluteFill}
-          accessibilityLabel={t('closeDetail')}
-          onPress={() => setPicked(null)}
-        />
-      )}
-
-      {reviewing &&
-        frameSize != null &&
-        visible.map((d, i) => (
+      {frameSize != null &&
+        !enroling &&
+        picked == null &&
+        visible.map(track => (
           <DetectionBox
-            key={i}
-            detection={d}
-            rect={boxToScreen(d, frameSize.w, frameSize.h, winW, winH)}
-            selected={picked === d}
-            onPress={() => setPicked(d)}
+            key={track.id}
+            detection={track.box}
+            rect={boxToScreen(track.box, frameSize.w, frameSize.h, winW, winH)}
+            identity={identities[track.id]}
+            onPress={() => setPicked({ id: track.id, box: track.box })}
           />
         ))}
 
       {picked != null && (
-        <View
-          style={[
-            styles.detailAnchor,
-            landscape
-              ? styles.detailAnchorLandscape
-              : styles.detailAnchorPortrait,
-          ]}
-        >
-          <DetailSheet
-            classId={picked.classId}
-            score={picked.score}
-            onClose={() => setPicked(null)}
-          />
-        </View>
-      )}
-
-      {scanning && (
-        <ScanOverlay
-          label={
-            batch != null
-              ? t('scanningProgress', { done: batch.done + 1, total: batch.total })
-              : undefined
-          }
+        <FaceScanScreen
+          mesh={mesh}
+          box={picked.box}
+          identity={identities[picked.id]}
+          takeSnapshot={takeSnapshot}
+          onClose={() => setPicked(null)}
         />
       )}
 
-      {(result != null || session != null) && (
-        <ResultIsland
-          top={resultTop}
-          faceCount={faceCount}
-          session={sessionTotal}
-        />
-      )}
-
-      {/* History and Settings: utility actions, not camera adjustments, so
-          they live in their own floating pill up top rather than crowding the
-          bottom toolbar - which stays for controls used while framing a shot. */}
-      {showTools && (
-        <GlassSurface
-          pill
-          style={[styles.header, { top: insets.top + 12 }]}
-          contentStyle={styles.headerRow}
-        >
-          <IconButton
-            name="clock"
-            label={t('openHistory')}
-            onPress={() => setHistoryOpen(true)}
-          />
-          <IconButton
-            name="settings"
-            label={t('openSettings')}
-            onPress={() => setSettingsOpen(true)}
-          />
-        </GlassSurface>
-      )}
+      {!enroling && <ResultIsland top={resultTop} faceCount={faceCount} />}
 
       {showTools && (
-        <View
-          style={[
-            styles.tools,
-            landscape ? styles.toolsLandscape : styles.toolsPortrait,
-            reviewing && !landscape && styles.toolsReviewPortrait,
-          ]}
-        >
-          {/* The two modes want different controls, and showing both at once
-              stretched the pill across the whole screen. Capture gets the camera
-              buttons; review gets the threshold, which is the only thing that
-              does anything once an image is frozen. */}
-          <GlassSurface pill contentStyle={styles.toolRow}>
-            {mode === 'idle' ? (
-              <>
-                <IconButton
-                  name="bolt"
-                  label={cam.torch === 'on' ? t('torchOff') : t('torchOn')}
-                  active={cam.torch === 'on'}
-                  // The front camera has no torch, so lock it out rather than
-                  // letting the tap do nothing.
-                  disabled={cam.torchDisabled}
-                  onPress={cam.toggleTorch}
-                />
-                <IconButton
-                  name="image"
-                  label={t('pickFromLibrary')}
-                  onPress={() => setPickerOpen(true)}
-                />
-                <IconButton
-                  name="sum"
-                  label={session == null ? t('sumStart') : t('sumStop')}
-                  active={session != null}
-                  // Off then on starts a fresh total - there is no separate
-                  // reset to find, and stopping is what you do when the count
-                  // is finished anyway.
-                  onPress={() => setSession(prev => (prev == null ? [] : null))}
-                />
-                <IconButton
-                  name="flip"
-                  label={t('flipCamera')}
-                  onPress={cam.flip}
-                />
-              </>
-            ) : (
-              <ThresholdSlider value={threshold} onChange={setThreshold} />
-            )}
-          </GlassSurface>
-
-          {mode === 'idle' && (
-            <GlassSurface pill contentStyle={styles.zoomRow}>
-              <ZoomSelector
-                steps={zoomSteps}
-                value={cam.zoom}
-                onChange={cam.setZoom}
-              />
-            </GlassSurface>
-          )}
-        </View>
-      )}
-
-      <View
-        style={[
-          styles.controls,
-          landscape ? styles.controlsLandscape : styles.controlsPortrait,
-        ]}
-      >
-        {reviewing ? (
-          <ReviewBar
-            saveState={saveState}
-            onRetake={() => {
-              setResult(null);
-              setPicked(null);
-              setPhoto(null);
-                      resetSave();
-              setMode('idle');
-            }}
-            onSave={() => {
-              // A library photo saves itself; a shot comes off the canvas.
-              const source = photo ?? camera.current?.takeSnapshot();
-              // Burn only the boxes currently on screen into the pixels.
-              save(
-                source != null && frameSize != null
-                  ? annotate(source, visible, frameSize.w, frameSize.h)
-                  : undefined,
-              );
-            }}
-          />
-        ) : (
-          <Animated.View style={shutterStyle}>
-            <Pressable
-              style={styles.shutterShell}
-              disabled={scanning}
-              accessibilityRole="button"
-              accessibilityLabel={t('shutter')}
-              onPressIn={() => {
-                press.value = withTiming(1, {
-                  duration: 180,
-                  easing: pressEase,
-                });
-              }}
-              onPressOut={() => {
-                press.value = withTiming(0, {
-                  duration: 420,
-                  easing: pressEase,
-                });
-              }}
-              onPress={() => {
-                setScanning(true);
-                setMode('capturing');
-              }}
-            >
-              <View style={styles.shutterRing}>
-                <View
-                  style={[
-                    styles.shutterCore,
-                    scanning && styles.shutterCoreBusy,
-                  ]}
-                />
-              </View>
-            </Pressable>
-          </Animated.View>
-        )}
-      </View>
-
-      {pickerOpen && (
-        <PhotoPicker
-          onPick={onPickPhotos}
-          onClose={() => setPickerOpen(false)}
+        <HeaderPill
+          top={insets.top + 12}
+          onHistory={openHistory}
+          onFlip={cam.flip}
+          onSettings={openSettings}
         />
       )}
 
       {historyOpen && (
         <HistorySheet
           records={history}
-          batch={lastBatch}
           onRemoveMany={removeScans}
           loadPreview={loadPreview}
           older={olderHistory}
@@ -881,14 +795,34 @@ export function DetectorScreen({ settings, guest, onLeaveGuest }: Props) {
           onClearHistory={() => removeScans(history.map(r => r.id))}
           guest={guest}
           onLeaveGuest={onLeaveGuest}
+          onReEnrol={onReEnrol}
+          zoom={cam.zoom}
+          zoomSteps={ZOOM_STEPS.filter(z => z <= device.maxZoom)}
+          onZoom={cam.setZoom}
           onClose={() => setSettingsOpen(false)}
         />
       )}
 
-      {/* Last, so it paints over the camera and its controls. The Modals above
-          are separate windows and would cover it regardless of order, but none
-          of them is open when a scan runs - the picker closes itself before
-          handing the photos over. */}
+      {/* Enrolment, over the live camera it borrows. Only while the detector
+          and the mesh model are actually loaded - the overlay has no models of
+          its own to fall back on. */}
+      {enroling && (
+        <EnrolFaceScreen
+          detector={model}
+          mesh={mesh}
+          takeSnapshot={takeSnapshot}
+          onFlip={cam.flip}
+          onDone={() => {
+            // The face just enrolled has to be read again, or everyone on
+            // screen keeps the "not enrolled" answer from a second ago.
+            resetIdentity();
+            onEnrolmentSettled();
+          }}
+          onSkip={onEnrolmentSettled}
+        />
+      )}
+
+      {/* Last, so it paints over the camera and its controls. */}
       {dialog}
     </View>
   );
@@ -935,68 +869,7 @@ const styles = StyleSheet.create({
   // in the status card)
   cta: { alignSelf: 'flex-start', marginTop: 26 },
 
-  // --- Header (History, Settings) --- top-right in both orientations: the
-  // shutter already claims the bottom in portrait and the right edge in
-  // landscape, so top-right is the one corner nothing else uses.
+  // --- Header (History, lens, Settings) ---
   header: { position: 'absolute', right: 16 },
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: 2, padding: 1 },
-
-  // --- Camera toolbar ---
-  tools: { position: 'absolute', alignItems: 'center', gap: 10 },
-  // 54 (bottom) + 86 (shutter) + 16 ≈ 170 is the top of the shutter cluster, so
-  // this has to sit well above it to keep the two groups apart.
-  toolsPortrait: { bottom: 208, left: 0, right: 0 },
-  // While reviewing, the shutter gives way to the much lower ReviewBar.
-  toolsReviewPortrait: { bottom: 150 },
-  // Landscape: pull towards centre-left, leaving the right edge to the shutter.
-  toolsLandscape: { bottom: 24, left: 0, right: 160 },
-  toolRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 5,
-  },
-  zoomRow: { paddingHorizontal: 4, paddingVertical: 3 },
-
-  // --- Detail sheet ---
-  detailAnchor: { position: 'absolute', alignItems: 'center' },
-  detailAnchorPortrait: { bottom: 190, left: 0, right: 0 },
-  // Landscape: tuck left, leaving the right edge to the shutter.
-  detailAnchorLandscape: { bottom: 20, left: 24 },
-
-  // --- Shutter ---
-  controls: {
-    position: 'absolute',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  controlsPortrait: { bottom: 54, left: 0, right: 0 },
-  // Landscape: shutter to the right edge, under the thumb in a two-hand grip.
-  controlsLandscape: { right: 40, top: 0, bottom: 0 },
-  shutterShell: {
-    width: 86,
-    height: 86,
-    borderRadius: 43,
-    backgroundColor: COLORS.shell,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.hairline,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  shutterRing: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.85)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  shutterCore: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: COLORS.accent,
-  },
-  shutterCoreBusy: { backgroundColor: 'rgba(0,230,118,0.35)' },
 });

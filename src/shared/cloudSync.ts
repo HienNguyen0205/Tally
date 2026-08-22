@@ -113,6 +113,7 @@ export async function deleteScans(ids: readonly string[]): Promise<boolean> {
   const { error: rowError } = await supabase
     .from('scans')
     .delete()
+    .eq('user_id', userId)
     .in('id', ids);
   if (rowError != null) {
     console.warn('[cloudSync] could not delete scan rows', rowError);
@@ -234,7 +235,8 @@ function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '');
-    reader.onerror = () => reject(new Error('could not read the downloaded image'));
+    reader.onerror = () =>
+      reject(new Error('could not read the downloaded image'));
     reader.readAsDataURL(blob);
   });
 }

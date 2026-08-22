@@ -58,6 +58,7 @@ export function AuthScreen({ onContinueAsGuest }: Props) {
 
   const { register, signIn } = useAuth();
   const [mode, setMode] = useState<Mode>('register');
+  const [nameInput, setNameInput] = useState('');
   const [emailInput, setEmailInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
   const [revealed, setRevealed] = useState(false);
@@ -65,6 +66,7 @@ export function AuthScreen({ onContinueAsGuest }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  const emailRef = useRef<TextInput | null>(null);
   const passwordRef = useRef<TextInput | null>(null);
   const languageSheetRef = useRef<TrueSheet | null>(null);
   const langPress = useSharedValue(0);
@@ -75,9 +77,10 @@ export function AuthScreen({ onContinueAsGuest }: Props) {
   const brandIn = useEnter(0);
   const tabsIn = useEnter(90);
   const cardIn = useEnter(180);
-  const emailIn = useEnter(260);
-  const passwordIn = useEnter(320);
-  const ctaIn = useEnter(380);
+  const nameIn = useEnter(260);
+  const emailIn = useEnter(290);
+  const passwordIn = useEnter(340);
+  const ctaIn = useEnter(390);
 
   // A short horizontal shake on the card whenever a new error lands - error
   // text alone is easy to skim past, the card physically objecting is not.
@@ -101,6 +104,7 @@ export function AuthScreen({ onContinueAsGuest }: Props) {
     // A password typed for "create account" has no business surviving into
     // "sign in" (and the reverse is just as wrong) - each tab starts clean
     // rather than carrying the other mode's half-finished input over.
+    setNameInput('');
     setEmailInput('');
     setPasswordInput('');
     setRevealed(false);
@@ -132,7 +136,11 @@ export function AuthScreen({ onContinueAsGuest }: Props) {
     setSubmitting(true);
     try {
       if (mode === 'register') {
-        const result = await register(trimmedEmail, passwordInput);
+        const result = await register(
+          trimmedEmail,
+          passwordInput,
+          nameInput.trim(),
+        );
         if (result.error != null) {
           setError(mapAuthError(result.error));
           return;
@@ -144,15 +152,24 @@ export function AuthScreen({ onContinueAsGuest }: Props) {
           setNotice(t('confirmEmailSent', { email: trimmedEmail }));
         }
       } else {
-        const { error: signInError } = await signIn(trimmedEmail, passwordInput);
+        const { error: signInError } = await signIn(
+          trimmedEmail,
+          passwordInput,
+        );
         if (signInError != null) setError(mapAuthError(signInError));
       }
     } finally {
       setSubmitting(false);
     }
-  }, [mode, emailInput, passwordInput, register, signIn]);
+  }, [mode, nameInput, emailInput, passwordInput, register, signIn]);
 
-  const blocked = submitting || emailInput === '' || passwordInput === '';
+  const blocked =
+    submitting ||
+    emailInput === '' ||
+    passwordInput === '' ||
+    // Register only: the name goes on the account at sign-up, and face
+    // enrolment later has nowhere else to read it from.
+    (mode === 'register' && nameInput.trim() === '');
 
   // A soft glow breathes behind the CTA once the form is actually submittable
   // - the button stops being just another control and starts drawing the eye
@@ -199,7 +216,6 @@ export function AuthScreen({ onContinueAsGuest }: Props) {
           >
             <LogoMark size={76} />
             <Text style={styles.name}>Tally</Text>
-            <Text style={styles.subtitle}>{t('authSubtitle')}</Text>
           </Animated.View>
 
           <View style={[styles.column, landscape && styles.columnLandscape]}>
@@ -220,6 +236,21 @@ export function AuthScreen({ onContinueAsGuest }: Props) {
                 core. GlassSurface is for surfaces with a camera under them. */}
             <Animated.View style={[styles.cardShell, cardIn, shakeStyle]}>
               <View style={styles.cardCore}>
+                {mode === 'register' && (
+                  <Animated.View style={nameIn}>
+                    <FormField
+                      label={t('nameLabel')}
+                      placeholder={t('nameHint')}
+                      value={nameInput}
+                      onChangeText={setNameInput}
+                      editable={!submitting}
+                      autoComplete="name"
+                      textContentType="name"
+                      returnKeyType="next"
+                      onSubmitEditing={() => emailRef.current?.focus()}
+                    />
+                  </Animated.View>
+                )}
                 <Animated.View style={emailIn}>
                   <FormField
                     label={t('emailLabel')}
@@ -227,6 +258,7 @@ export function AuthScreen({ onContinueAsGuest }: Props) {
                     value={emailInput}
                     onChangeText={setEmailInput}
                     editable={!submitting}
+                    inputRef={emailRef}
                     keyboardType="email-address"
                     autoComplete="email"
                     textContentType="emailAddress"
@@ -279,7 +311,11 @@ export function AuthScreen({ onContinueAsGuest }: Props) {
                   />
                   <CtaButton
                     block
-                    label={mode === 'register' ? t('registerSubmit') : t('signInSubmit')}
+                    label={
+                      mode === 'register'
+                        ? t('registerSubmit')
+                        : t('signInSubmit')
+                    }
                     loading={submitting}
                     disabled={blocked}
                     onPress={submit}

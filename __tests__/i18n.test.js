@@ -21,22 +21,21 @@ const active = locale === 'vi' ? vi : en;
  */
 const INTERPOLATED = [
   ['zoomTimes', { count: 3 }],
-  ['scanningProgress', { done: 2, total: 5 }],
   ['faceCount', { count: 7 }],
   ['boxLabel', { percent: 64 }],
   ['percent', { n: 64 }],
-  ['limitedNotice', { count: 12 }],
-  ['scanSelected', { count: 12 }],
   ['deleteSelected', { n: 8 }],
   ['signOutConfirmBody', { email: 'a@b.co' }],
   ['confirmEmailSent', { email: 'a@b.co' }],
-  ['batchTitle', { count: 9 }],
-  ['sumPhotos', { count: 9 }],
   ['scanCount', { count: 5 }],
+  ['faceMatchScore', { percent: 82 }],
+  ['faceKnownLabel', { name: 'Hien' }],
   ['weekTitle', { days: 7 }],
   ['weekTotal', { scans: '5 scans', faces: '11 faces' }],
   ['clearHistoryConfirmBody', { count: '5 scans' }],
   ['signedInAs', { email: 'a@b.co' }],
+  ['enrolProgress', { n: 2, total: 3 }],
+  ['enrolShotFailed', { why: 'too blurry', n: 3 }],
 ];
 
 describe('t()', () => {
@@ -109,7 +108,12 @@ describe('catalogs', () => {
     const placeholdersOf = value =>
       typeof value === 'string'
         ? placeholders(value)
-        : [...new Set([...placeholders(value.one), ...placeholders(value.other)])].sort();
+        : [
+            ...new Set([
+              ...placeholders(value.one),
+              ...placeholders(value.other),
+            ]),
+          ].sort();
 
     for (const key of Object.keys(vi)) {
       expect(placeholdersOf(en[key])).toEqual(placeholders(vi[key]));

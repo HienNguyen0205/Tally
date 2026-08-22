@@ -171,7 +171,11 @@ describe('groupByDay', () => {
       now,
     );
 
-    expect(sections.map(s => s.title)).toEqual([t('today'), t('yesterday'), '15/8/2026']);
+    expect(sections.map(s => s.title)).toEqual([
+      t('today'),
+      t('yesterday'),
+      '15/8/2026',
+    ]);
   });
 
   it('keeps several scans from one day in one section', () => {
@@ -205,7 +209,10 @@ describe('weekTotals', () => {
 
   it('adds up every scan inside the window', () => {
     expect(
-      weekTotals([scan(ts(2026, 8, 18, 9), 3), scan(ts(2026, 8, 16, 9), 2)], now),
+      weekTotals(
+        [scan(ts(2026, 8, 18, 9), 3), scan(ts(2026, 8, 16, 9), 2)],
+        now,
+      ),
     ).toEqual({ faces: 5, photos: 2 });
   });
 

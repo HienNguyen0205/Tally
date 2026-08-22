@@ -15,7 +15,10 @@ function Harness({ config }) {
   return React.createElement(
     React.Fragment,
     null,
-    React.createElement(Pressable, { testID: 'open', onPress: () => show(config) }),
+    React.createElement(Pressable, {
+      testID: 'open',
+      onPress: () => show(config),
+    }),
     dialog,
   );
 }

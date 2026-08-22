@@ -130,7 +130,10 @@ export function LogoMark({ size = 132 }: { size?: number }) {
 
   useEffect(() => {
     pop.value = withSpring(1, { damping: 11, stiffness: 140, mass: 0.6 });
-    draw.value = withDelay(160, withTiming(1, { duration: 1050, easing: ease }));
+    draw.value = withDelay(
+      160,
+      withTiming(1, { duration: 1050, easing: ease }),
+    );
     // Runs from the very first frame, independent of the entrance - the comet
     // is what keeps the mark from ever reading as a static icon. Each lap
     // restarts from 0 rather than reversing, so it always reads as one

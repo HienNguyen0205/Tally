@@ -17,7 +17,8 @@ function isSettings(v: unknown): v is Settings {
   if (typeof v !== 'object' || v === null) return false;
   const s = v as Record<string, unknown>;
   return (
-    typeof s.hapticsEnabled === 'boolean' && typeof s.defaultThreshold === 'number'
+    typeof s.hapticsEnabled === 'boolean' &&
+    typeof s.defaultThreshold === 'number'
   );
 }
 

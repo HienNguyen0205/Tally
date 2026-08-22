@@ -37,21 +37,13 @@ export const vi = {
   loadingAccount: 'Đang kiểm tra tài khoản',
 
   // Camera controls
-  torchOn: 'Bật đèn flash',
-  torchOff: 'Tắt đèn flash',
-  pickFromLibrary: 'Quét ảnh có sẵn trong thư viện',
   openHistory: 'Xem lịch sử quét',
   openSettings: 'Mở cài đặt',
   flipCamera: 'Đổi camera trước sau',
-  shutter: 'Chụp và quét',
   tapToFocus: 'Chạm vào khung hình để lấy nét',
-  closeDetail: 'Đóng bảng chi tiết',
   zoomTimes: 'Phóng to %{count} lần',
 
   // Scanning
-  scanning: 'ĐANG QUÉT',
-  scanningProgress: 'ĐANG QUÉT %{done}/%{total}',
-  scanFailed: 'Không quét được ảnh',
 
   // The detector's one class. `faceName` is the bare noun - the number sits in
   // its own Text beside it, at a different size, so it is not part of the
@@ -62,7 +54,7 @@ export const vi = {
   // Detection box. No name in the label: with one class it would say "khuôn
   // mặt" on every single box.
   boxLabel: 'Khuôn mặt, độ tin cậy %{percent} phần trăm',
-  boxHint: 'Mở thẻ chi tiết của khuôn mặt này',
+  boxHint: 'Mở bản quét khuôn mặt này',
 
   // Threshold slider
   thresholdLabel: 'Ngưỡng tin cậy',
@@ -71,23 +63,8 @@ export const vi = {
   percent: '%{n} phần trăm',
 
   // Review bar
-  saving: 'Đang lưu…',
-  saved: 'Đã lưu vào thư viện',
-  saveFailed: 'Lưu thất bại, chạm để thử lại',
-  retake: 'Chụp lại',
-  saveAnnotated: 'Lưu ảnh đã gắn khung vào thư viện',
 
   // Photo picker
-  pickTitle: 'Chọn ảnh',
-  needPhotoPermission: 'Cần quyền đọc ảnh để chọn từ thư viện.',
-  cannotReadLibrary: 'Không đọc được thư viện ảnh.',
-  noPhotosGranted: 'Bạn chưa cho ứng dụng xem ảnh nào.',
-  noPhotos: 'Thư viện chưa có ảnh nào.',
-  grantMorePhotos: 'Chọn ảnh cho phép',
-  limitedNotice: 'Chỉ thấy %{count} ảnh bạn đã cho phép · Chọn thêm',
-  selectPhoto: 'Chọn ảnh này để quét',
-  deselectPhoto: 'Bỏ chọn ảnh này',
-  scanSelected: 'Quét %{count} ảnh',
 
   // History
   historyTitle: 'Lịch sử',
@@ -111,10 +88,13 @@ export const vi = {
   settingsTitle: 'Cài đặt',
   languageSection: 'NGÔN NGỮ',
   detectionSection: 'PHÁT HIỆN',
+  zoomLabel: 'Thu phóng',
+  zoomHint: 'Áp dụng cho khung ngắm trực tiếp.',
   hapticsLabel: 'Rung khi phát hiện khuôn mặt',
   hapticsHint: 'Bật hoặc tắt cảnh báo rung khi quét thấy khuôn mặt',
   defaultThresholdLabel: 'Ngưỡng tin cậy mặc định',
-  defaultThresholdHint: 'Mức tin cậy dùng mỗi khi mở app, không ảnh hưởng lần quét đang xem',
+  defaultThresholdHint:
+    'Mức tin cậy dùng mỗi khi mở app, không ảnh hưởng lần quét đang xem',
   dataSection: 'DỮ LIỆU',
   clearHistory: 'Xoá lịch sử quét',
   clearHistoryHint: 'Xoá toàn bộ lịch sử đã lưu, gồm cả bản sao trên đám mây',
@@ -127,11 +107,12 @@ export const vi = {
   changeLanguage: 'Đổi ngôn ngữ',
   authEyebrow: 'TÀI KHOẢN',
   signedInAs: 'Đã đăng nhập: %{email}',
-  authSubtitle: 'Đăng nhập để bắt đầu đếm',
   continueAsGuest: 'Tiếp tục không cần tài khoản',
   guestModeNotice:
     'Đang dùng ở chế độ khách. Lịch sử quét sẽ không được lưu trên máy này hay trên đám mây.',
   guestSignInCta: 'Đăng nhập hoặc tạo tài khoản',
+  nameLabel: 'Tên hiển thị',
+  nameHint: 'Tên người khác thấy khi quét trúng bạn',
   emailLabel: 'Email',
   emailHint: 'ban@vidu.com',
   passwordLabel: 'Mật khẩu',
@@ -159,7 +140,6 @@ export const vi = {
   // has two counts in one sentence, and i18n-js pluralises on a single
   // `count`, so the only way each half can inflect is to render it on its own
   // first. That is what faceCount and scanCount are for.
-  batchTitle: 'Vừa quét %{count} ảnh',
 
   // Paging older scans back down from the cloud, past the local cap.
   loadOlder: 'Xem các lần quét cũ hơn',
@@ -169,15 +149,61 @@ export const vi = {
   weekTitle: '%{days} ngày qua',
   weekTotal: '%{scans} · %{faces}',
 
+  // Face recognition
+  faceUnknownShort: 'Chưa rõ',
+  faceReading: 'đang nhận diện…',
+  faceOffline: 'Không kết nối được máy chủ nhận diện',
+  faceNotEnrolled: 'Khuôn mặt chưa đăng ký',
+  faceTurnedAway: 'Mặt nghiêng quá, không đối chiếu được',
+  faceUnreadable: 'Không đọc được khuôn mặt',
+  faceBlurry: 'Ảnh mờ quá - giữ máy yên',
+  faceMisconfigured: 'Nhận diện bị cấu hình sai ở bản dựng này',
+  enrolBlurry: 'Ảnh mờ quá, chưa lưu được. Giữ máy yên rồi quét lại.',
+  faceMatchScore: 'Khớp %{percent}%',
+  scanEyebrow: 'Bản quét khuôn mặt',
+  scanMeshing: 'Đang đọc lưới…',
+  scanFailed: 'Không có khung hình',
+  scanFailedBody: 'Camera không đưa được khung hình nào lúc đó. Thử lại.',
+  scanAgain: 'Quét lại khuôn mặt này',
+  closeScan: 'Đóng bản quét',
+  scanConfidence: 'Phát hiện',
+  scanLandmarks: 'Cạnh lưới',
+  faceKnownLabel: 'Khuôn mặt của %{name}',
+
+  // Face enrolment
+  faceSection: 'Khuôn mặt của bạn',
+  faceSectionHint:
+    'Dùng để nhận ra bạn khi quét. Ảnh không bao giờ được lưu — chỉ lưu một dãy số.',
+  reEnrolFace: 'Quét lại',
+  deleteFace: 'Xoá khuôn mặt',
+  deleteFaceConfirmTitle: 'Xoá khuôn mặt đã đăng ký?',
+  deleteFaceConfirmBody:
+    'Các lần quét sẽ không gọi đúng tên bạn nữa, cho tới khi bạn đăng ký lại.',
+  deleteFaceDone: 'Đã xoá khuôn mặt của bạn.',
+  deleteFaceFailed: 'Chưa xoá được. Thử lại.',
+  enrolEyebrow: 'Thiết lập',
+  enrolTitle: 'Quét khuôn mặt',
+  enrolBody: 'Nhìn thẳng vào camera. Không lưu ảnh, chỉ lưu dãy số.',
+  enrolCta: 'Bắt đầu',
+  enrolSkip: 'Để sau',
+  enrolScanning: 'Đang quét…',
+  enrolNoFace: 'Chưa thấy khuôn mặt trong khung.',
+  enrolFacingFront: 'Nhìn thẳng vào máy',
+  enrolFacingLeft: 'Quay nhẹ sang trái',
+  enrolFacingRight: 'Rồi quay nhẹ sang phải',
+  enrolProgress: 'Góc %{n} trên %{total} - giữ yên',
+  enrolWaking: 'Đang đánh thức máy chủ nhận diện…',
+  enrolShotFailed: '%{why} (góc %{n})',
+  enrolManyFaces: 'Có nhiều hơn một khuôn mặt.',
+  enrolTurned: 'Nhìn thẳng vào camera.',
+  enrolFailed: 'Chưa lưu được. Thử lại.',
+  enrolDone: 'Đã lưu khuôn mặt.',
+
   // Day headers
   today: 'Hôm nay',
   yesterday: 'Hôm qua',
 
   // Running total
-  sumStart: 'Bắt đầu cộng dồn nhiều lần chụp',
-  sumStop: 'Dừng cộng dồn',
-  sumTotal: 'tổng',
-  sumPhotos: '%{count} ảnh',
 } as const;
 
 export type StringKey = keyof typeof vi;
@@ -192,10 +218,6 @@ const PLURAL_KEY_LIST = [
   'zoomTimes',
   'faceName',
   'faceCount',
-  'limitedNotice',
-  'scanSelected',
-  'batchTitle',
-  'sumPhotos',
   'scanCount',
 ] as const;
 
@@ -232,19 +254,16 @@ export type InflectedCatalog = {
  */
 export interface Params extends Record<PluralKey, { count: number }> {
   zoomTimes: { count: number };
-  scanningProgress: { done: number; total: number };
   faceName: { count: number };
   faceCount: { count: number };
   boxLabel: { percent: number };
   percent: { n: number };
-  limitedNotice: { count: number };
-  scanSelected: { count: number };
   deleteSelected: { n: number };
   signOutConfirmBody: { email: string };
   confirmEmailSent: { email: string };
-  batchTitle: { count: number };
-  sumPhotos: { count: number };
   scanCount: { count: number };
+  faceMatchScore: { percent: number };
+  faceKnownLabel: { name: string };
   /** Always WEEK_DAYS (history.ts), so it never needs to inflect. */
   weekTitle: { days: number };
   /** Both are rendered strings - see `weekTotal` in the catalog above. */
@@ -252,4 +271,8 @@ export interface Params extends Record<PluralKey, { count: number }> {
   /** Pre-rendered via `scanCount` - same reason `weekTotal` takes strings. */
   clearHistoryConfirmBody: { count: string };
   signedInAs: { email: string };
+  enrolProgress: { n: number; total: number };
+  /** `why` is already a translated sentence - the reason the shot failed,
+   *  chosen by the caller and simply framed by this string. */
+  enrolShotFailed: { why: string; n: number };
 }

@@ -3,19 +3,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.VIBRATE" />
-    <!-- Lưu ảnh vào thư viện. Từ API 29 (scoped storage) MediaStore không cần
-         quyền này nữa, nên giới hạn tới 28 để khỏi xin quyền thừa. -->
-    <uses-permission
-        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="28" />
-    <!-- Chọn ảnh có sẵn để quét. API 33 tách riêng quyền đọc ảnh; máy cũ hơn
-         vẫn phải dùng quyền đọc bộ nhớ chung nên giới hạn tới 32. -->
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-    <uses-permission
-        android:name="android.permission.READ_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32" />
     <uses-feature android:name="android.hardware.camera" android:required="true" />
-
     <application
       android:name=".MainApplication"
       android:label="@string/app_name"
@@ -23,14 +11,10 @@
       android:roundIcon="@mipmap/ic_launcher_round"
       android:allowBackup="false"
       android:theme="@style/AppTheme"
+      android:largeHeap="true"
+      android:screenOrientation="portrait"
       android:usesCleartextTraffic="${usesCleartextTraffic}"
       android:supportsRtl="true">
-
-      <!-- GPU delegate của TFLite nạp các thư viện này lúc chạy. Từ API 31 thư
-           viện native ngoài NDK phải khai báo ở đây mới nạp được, và phải nằm
-           TRONG <application> - để ngoài thì không có tác dụng gì.
-           required="false" để máy không có OpenCL vẫn cài được app; lúc đó
-           DetectorScreen tự lùi về CPU. -->
       <uses-native-library android:name="libOpenCL.so" android:required="false" />
       <uses-native-library android:name="libOpenCL-pixel.so" android:required="false" />
       <uses-native-library android:name="libGLES_mali.so" android:required="false" />

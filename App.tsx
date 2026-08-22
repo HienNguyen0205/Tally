@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { StatusBar as RNStatusBar, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { DetectorScreen } from './src/screens/DetectorScreen';
@@ -6,6 +6,7 @@ import { AuthScreen } from './src/screens/AuthScreen';
 import { LaunchScreen } from './src/components/LaunchScreen';
 import { useAuth } from './src/hooks/useAuth';
 import { useSettings } from './src/hooks/useSettings';
+import { hasEnrolled } from './src/shared/faceProfiles';
 import { t, useLocale } from './src/i18n';
 
 /**
@@ -31,6 +32,34 @@ function Root() {
   // would for someone who has never opened the app before.
   const [guestMode, setGuestMode] = useState(false);
 
+  // 'checking' until Supabase answers, so the camera does not flash up for a
+  // moment before the enrolment step replaces it. 'settled' also covers
+  // skipping: the step is an offer, not a wall - someone who declines still
+  // gets the app, they just never match on anyone's scan.
+  const [enrolment, setEnrolment] = useState<
+    'checking' | 'needed' | 'settled'
+  >('checking');
+
+  const checkEnrolment = useCallback(async () => {
+    if (email == null) {
+      setEnrolment('checking');
+      return;
+    }
+    try {
+      setEnrolment((await hasEnrolled()) ? 'settled' : 'needed');
+    } catch (e) {
+      // Offline, or the table has not been created yet (see
+      // supabase/face_profiles.sql). Either way, do not block the camera
+      // behind a step that cannot succeed.
+      console.warn('[App] could not check face enrolment', e);
+      setEnrolment('settled');
+    }
+  }, [email]);
+
+  useEffect(() => {
+    checkEnrolment();
+  }, [checkEnrolment]);
+
   // Subscribed only so a call to setLocale() (from SettingsScreen) forces this
   // component to re-render - nothing here reads the return value. Since
   // nothing in this codebase memoises with React.memo, that re-render cascades
@@ -43,6 +72,7 @@ function Root() {
   if (email == null && !guestMode) {
     return <AuthScreen onContinueAsGuest={() => setGuestMode(true)} />;
   }
+
   return (
     <DetectorScreen
       settings={settings}
@@ -54,6 +84,14 @@ function Root() {
       // extra plumbing to reset the flag itself.
       guest={email == null}
       onLeaveGuest={() => setGuestMode(false)}
+      // Enrolment is rendered by DetectorScreen rather than swapped in here:
+      // it needs the three models and the running camera, and loading a second
+      // set of those is what ran the heap out of memory.
+      needsEnrolment={email != null && enrolment === 'needed'}
+      onEnrolmentSettled={() => setEnrolment('settled')}
+      // Straight back to 'needed': the overlay is driven by this one flag, so
+      // asking to scan again is the same state the app starts a new account in.
+      onReEnrol={() => setEnrolment('needed')}
     />
   );
 }

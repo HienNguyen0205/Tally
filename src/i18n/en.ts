@@ -29,20 +29,11 @@ export const en: InflectedCatalog = {
   loadingModel: 'Loading the model',
   loadingAccount: 'Checking your account',
 
-  torchOn: 'Turn the torch on',
-  torchOff: 'Turn the torch off',
-  pickFromLibrary: 'Scan a photo from the library',
   openHistory: 'View scan history',
   openSettings: 'Open settings',
   flipCamera: 'Switch between front and back camera',
-  shutter: 'Capture and scan',
   tapToFocus: 'Tap the viewfinder to focus',
-  closeDetail: 'Close the detail sheet',
   zoomTimes: { one: 'Zoom %{count} time', other: 'Zoom %{count} times' },
-
-  scanning: 'SCANNING',
-  scanningProgress: 'SCANNING %{done}/%{total}',
-  scanFailed: 'Could not scan the photo',
 
   // `faceName` is a bare unit - the number is rendered separately, so it is
   // absent here. `faceCount` carries both.
@@ -50,32 +41,12 @@ export const en: InflectedCatalog = {
   faceCount: { one: '%{count} face', other: '%{count} faces' },
 
   boxLabel: 'Face, %{percent} percent confidence',
-  boxHint: 'Open the detail sheet for this face',
+  boxHint: 'Open the face scan for this face',
 
   thresholdLabel: 'Confidence threshold',
   thresholdHint:
     'Swipe up or down to change the minimum confidence a face needs to show',
   percent: '%{n} percent',
-
-  saving: 'Saving…',
-  saved: 'Saved to the library',
-  saveFailed: 'Save failed, tap to retry',
-  retake: 'Retake',
-  saveAnnotated: 'Save the annotated image to the library',
-
-  pickTitle: 'Pick a photo',
-  needPhotoPermission: 'Photo access is needed to pick from the library.',
-  cannotReadLibrary: 'Could not read the photo library.',
-  noPhotosGranted: 'You have not let the app see any photos yet.',
-  noPhotos: 'The library has no photos.',
-  grantMorePhotos: 'Choose which photos to allow',
-  limitedNotice: {
-    one: 'Only %{count} allowed photo · Choose more',
-    other: 'Only %{count} allowed photos · Choose more',
-  },
-  selectPhoto: 'Select this photo to scan',
-  deselectPhoto: 'Deselect this photo',
-  scanSelected: { one: 'Scan %{count} photo', other: 'Scan %{count} photos' },
 
   historyTitle: 'History',
   historyEmpty:
@@ -97,6 +68,8 @@ export const en: InflectedCatalog = {
   settingsTitle: 'Settings',
   languageSection: 'LANGUAGE',
   detectionSection: 'DETECTION',
+  zoomLabel: 'Zoom',
+  zoomHint: 'Applies to the live viewfinder.',
   hapticsLabel: 'Vibrate when faces are detected',
   hapticsHint: 'Turn the vibration alert on or off for scans that find faces',
   defaultThresholdLabel: 'Default confidence threshold',
@@ -113,11 +86,12 @@ export const en: InflectedCatalog = {
   changeLanguage: 'Change language',
   authEyebrow: 'ACCOUNT',
   signedInAs: 'Signed in: %{email}',
-  authSubtitle: 'Sign in to start counting',
   continueAsGuest: 'Continue without an account',
   guestModeNotice:
     "You're using guest mode. Scan history won't be saved on this device or in the cloud.",
   guestSignInCta: 'Sign in or create an account',
+  nameLabel: 'Display name',
+  nameHint: 'What others see when a scan recognises you',
   emailLabel: 'Email',
   emailHint: 'you@example.com',
   passwordLabel: 'Password',
@@ -134,26 +108,65 @@ export const en: InflectedCatalog = {
   confirmEmailSent:
     'Confirmation email sent to %{email}. Check your inbox to finish.',
   authErrorGeneric: 'Something went wrong, try again.',
-  authErrorExists: 'That email already has an account - try signing in instead.',
+  authErrorExists:
+    'That email already has an account - try signing in instead.',
   authErrorBadLogin: 'Wrong email or password.',
   authErrorWeakPassword: 'Password needs at least 6 characters.',
   authErrorInvalidEmail: 'That email address is not valid.',
-
-  batchTitle: {
-    one: 'Just scanned %{count} photo',
-    other: 'Just scanned %{count} photos',
-  },
 
   loadOlder: 'Show older scans',
 
   weekTitle: 'Last %{days} days',
   weekTotal: '%{scans} · %{faces}',
 
+  faceUnknownShort: 'Unknown',
+  faceReading: 'identifying…',
+  faceNotEnrolled: 'Face not enrolled',
+  faceOffline: 'Recognition server unreachable',
+  faceTurnedAway: 'Turned too far to compare',
+  faceUnreadable: 'Could not read this face',
+  faceBlurry: 'Too blurry to read - hold steady',
+  faceMisconfigured: 'Recognition is misconfigured on this build',
+  enrolBlurry: 'Too blurry to enrol. Hold the phone steady and scan again.',
+  faceMatchScore: '%{percent}% match',
+  scanEyebrow: 'Face scan',
+  scanMeshing: 'Reading the mesh…',
+  scanFailed: 'No frame',
+  scanFailedBody: 'The camera had nothing to hand over just then. Try again.',
+  scanAgain: 'Scan this face again',
+  closeScan: 'Close the face scan',
+  scanConfidence: 'Detected',
+  scanLandmarks: 'Mesh edges',
+  faceKnownLabel: "%{name}'s face",
+
+  faceSection: 'Your face',
+  faceSectionHint:
+    'Used to recognise you on a scan. The photo is never kept - only a set of numbers.',
+  reEnrolFace: 'Scan again',
+  deleteFace: 'Delete my face',
+  deleteFaceConfirmTitle: 'Delete your enrolled face?',
+  deleteFaceConfirmBody:
+    'Scans stop putting your name to your face until you enrol again.',
+  deleteFaceDone: 'Your face has been deleted.',
+  deleteFaceFailed: 'Could not delete it. Try again.',
+  enrolEyebrow: 'Setup',
+  enrolTitle: 'Scan your face',
+  enrolBody: 'Look straight at the camera. No photo is kept - only numbers.',
+  enrolCta: 'Start',
+  enrolSkip: 'Later',
+  enrolScanning: 'Scanning…',
+  enrolNoFace: 'No face in the frame.',
+  enrolFacingFront: 'Look straight ahead',
+  enrolFacingLeft: 'Now turn slightly left',
+  enrolFacingRight: 'And slightly right',
+  enrolProgress: 'Angle %{n} of %{total} - hold still',
+  enrolWaking: 'Waking the recognition server…',
+  enrolShotFailed: '%{why} (angle %{n})',
+  enrolManyFaces: 'More than one face in the frame.',
+  enrolTurned: 'Look straight at the camera.',
+  enrolFailed: 'Could not save. Try again.',
+  enrolDone: 'Face saved.',
+
   today: 'Today',
   yesterday: 'Yesterday',
-
-  sumStart: 'Start adding captures up',
-  sumStop: 'Stop adding up',
-  sumTotal: 'total',
-  sumPhotos: { one: '%{count} photo', other: '%{count} photos' },
 };

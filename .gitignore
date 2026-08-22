@@ -82,3 +82,5 @@ fastlane/README.md
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+__pycache__/

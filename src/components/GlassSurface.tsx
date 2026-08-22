@@ -28,9 +28,7 @@ export function GlassSurface({ children, pill, style, contentStyle }: Props) {
 
   return (
     <View style={[styles.shell, { borderRadius: shellRadius }, style]}>
-      <View
-        style={[styles.core, { borderRadius: coreRadius }, contentStyle]}
-      >
+      <View style={[styles.core, { borderRadius: coreRadius }, contentStyle]}>
         <BlurView
           style={StyleSheet.absoluteFill}
           blurType={BLUR.type}

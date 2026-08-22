@@ -66,7 +66,12 @@ export function LanguageSheet({ sheetRef }: Props) {
                 </Text>
               </View>
               {selected && (
-                <Icon name="check" size={18} color={COLORS.accent} strokeWidth={2} />
+                <Icon
+                  name="check"
+                  size={18}
+                  color={COLORS.accent}
+                  strokeWidth={2}
+                />
               )}
             </Pressable>
           );

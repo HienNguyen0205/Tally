@@ -8,7 +8,13 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { BEZEL_PAD, COLORS, EASE_OUT_EXPO, FONT, RADIUS } from '../shared/theme';
+import {
+  BEZEL_PAD,
+  COLORS,
+  EASE_OUT_EXPO,
+  FONT,
+  RADIUS,
+} from '../shared/theme';
 
 const ease = Easing.bezier(...EASE_OUT_EXPO);
 

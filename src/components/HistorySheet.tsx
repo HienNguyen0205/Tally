@@ -21,7 +21,6 @@ import { COLORS, FONT } from '../shared/theme';
 import {
   clockTime,
   groupByDay,
-  totalOf,
   WEEK_DAYS,
   weekTotals,
   type ScanRecord,
@@ -237,51 +236,54 @@ function Row({
 
   return (
     <Animated.View style={fadeStyle} pointerEvents={dying ? 'none' : 'auto'}>
-    <Pressable
-      style={[styles.row, selected && styles.rowSelected]}
-      accessibilityRole={selecting ? 'checkbox' : 'button'}
-      accessibilityState={selecting ? { checked: selected } : undefined}
-      accessibilityLabel={
-        selecting ? (selected ? t('deselectRow') : t('selectRow')) : t('openScan')
-      }
-      onPress={selecting ? onToggle : onOpen}
-      // Long press is how a list like this is normally put into selection mode,
-      // and it saves reaching for the header to start.
-      onLongPress={onToggle}
-    >
-      {record.thumbnail !== '' && (
-        <Image
-          source={{ uri: `data:image/jpeg;base64,${record.thumbnail}` }}
-          style={styles.thumb}
-        />
-      )}
+      <Pressable
+        style={[styles.row, selected && styles.rowSelected]}
+        accessibilityRole={selecting ? 'checkbox' : 'button'}
+        accessibilityState={selecting ? { checked: selected } : undefined}
+        accessibilityLabel={
+          selecting
+            ? selected
+              ? t('deselectRow')
+              : t('selectRow')
+            : t('openScan')
+        }
+        onPress={selecting ? onToggle : onOpen}
+        // Long press is how a list like this is normally put into selection mode,
+        // and it saves reaching for the header to start.
+        onLongPress={onToggle}
+      >
+        {record.thumbnail !== '' && (
+          <Image
+            source={{ uri: `data:image/jpeg;base64,${record.thumbnail}` }}
+            style={styles.thumb}
+          />
+        )}
 
-      <View style={styles.rowText}>
-        {/* Two lines: a scan with several classes, or the "nothing found"
+        <View style={styles.rowText}>
+          {/* Two lines: a scan with several classes, or the "nothing found"
             message, does not fit on one at this width. */}
-        <Text style={styles.rowTitle} numberOfLines={2}>
-          {breakdown(record)}
-        </Text>
-        <Text style={styles.rowMeta}>{clockTime(record.at)}</Text>
-      </View>
+          <Text style={styles.rowTitle} numberOfLines={2}>
+            {breakdown(record)}
+          </Text>
+          <Text style={styles.rowMeta}>{clockTime(record.at)}</Text>
+        </View>
 
-      {selecting ? (
-        <Checkbox selected={selected} />
-      ) : (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t('removeScan')}
-          hitSlop={12}
-          onPress={onRemove}
-        >
-          <CloseIcon size={18} color={COLORS.textMuted} />
-        </Pressable>
-      )}
-    </Pressable>
+        {selecting ? (
+          <Checkbox selected={selected} />
+        ) : (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('removeScan')}
+            hitSlop={12}
+            onPress={onRemove}
+          >
+            <CloseIcon size={18} color={COLORS.textMuted} />
+          </Pressable>
+        )}
+      </Pressable>
     </Animated.View>
   );
 }
-
 
 /**
  * One past scan, opened full-bleed over the list.
@@ -356,7 +358,10 @@ function Viewer({
               // The fallback is a 96px row thumbnail. Blown up to the full width
               // it turns to mush and reads as a broken photo rather than an old
               // record, so it is held near its own size and captioned instead.
-              style={[styles.viewerPhoto, preview == null && styles.viewerThumb]}
+              style={[
+                styles.viewerPhoto,
+                preview == null && styles.viewerThumb,
+              ]}
               // contain, not cover: a count is about what was in the frame, and
               // cropping to fill could hide the very thing that was counted.
               resizeMode="contain"
@@ -390,7 +395,6 @@ function Viewer({
  */
 export function HistorySheet({
   records,
-  batch,
   loadPreview,
   onRemoveMany,
   older,
@@ -400,8 +404,6 @@ export function HistorySheet({
   onClose,
 }: {
   records: ScanRecord[];
-  /** Ids from a run that just finished, summarised above the list. */
-  batch?: string[] | null;
   loadPreview: (id: string) => Promise<string | null>;
   /** One row or a whole selection - both go through the same fade. */
   onRemoveMany: (ids: readonly string[]) => void;
@@ -488,7 +490,9 @@ export function HistorySheet({
   const allSelected = visible.length > 0 && selected.size === visible.length;
   const toggleAll = useCallback(() => {
     setSelected(prev =>
-      prev.size === visible.length ? new Set() : new Set(visible.map(r => r.id)),
+      prev.size === visible.length
+        ? new Set()
+        : new Set(visible.map(r => r.id)),
     );
   }, [visible]);
 
@@ -496,11 +500,6 @@ export function HistorySheet({
     requestRemove([...selected]);
     endSelect();
   }, [requestRemove, selected, endSelect]);
-
-  // Filtered against `records` rather than trusted wholesale, so a row deleted
-  // while the sheet is open drops out of the total too.
-  const summary =
-    batch == null ? null : totalOf(visible.filter(r => batch.includes(r.id)));
 
   // The share sheet, not a file: RN's Share is already in core, and a count
   // pasted into a spreadsheet or a chat is what people actually do with it.
@@ -511,7 +510,9 @@ export function HistorySheet({
   // which rows the user means, so making them export the whole history and
   // delete the rest in a spreadsheet would be asking them to say it twice.
   const shareCsv = useCallback(() => {
-    const subset = selecting ? visible.filter(r => selected.has(r.id)) : visible;
+    const subset = selecting
+      ? visible.filter(r => selected.has(r.id))
+      : visible;
     Share.share({ message: toCsv(subset), title: t('shareSubject') }).catch(e =>
       console.warn('[HistorySheet] could not share the history', e),
     );
@@ -537,7 +538,9 @@ export function HistorySheet({
               <Pressable
                 accessibilityRole="checkbox"
                 accessibilityState={{ checked: allSelected }}
-                accessibilityLabel={allSelected ? t('deselectAll') : t('selectAll')}
+                accessibilityLabel={
+                  allSelected ? t('deselectAll') : t('selectAll')
+                }
                 hitSlop={12}
                 onPress={toggleAll}
               >
@@ -599,22 +602,9 @@ export function HistorySheet({
             ]}
             ListHeaderComponent={
               <>
-                {summary != null && summary.photos > 1 && (
-                  <View style={styles.summary}>
-                    <Text style={styles.summaryTitle}>
-                      {t('batchTitle', { count: summary.photos })}
-                    </Text>
-                    <Text style={styles.summaryLine}>
-                      {t('faceCount', { count: summary.faces })}
-                    </Text>
-                  </View>
-                )}
-
-                {/* Below the batch block, not above it: a batch summary is
-                    about the run that just finished and is what the sheet was
-                    opened to see, while this is standing context. Hidden when
-                    the window is empty - a row of zeroes says nothing that an
-                    absent strip does not. */}
+                {/* Standing context, not a result. Hidden when the window is
+                    empty - a row of zeroes says nothing that an absent strip
+                    does not. */}
                 {week.photos > 0 && (
                   <View style={styles.week}>
                     <Text style={styles.weekTitle}>
@@ -778,25 +768,6 @@ const styles = StyleSheet.create({
     paddingBottom: 6,
     // Opaque: a sticky header scrolls rows underneath itself.
     backgroundColor: '#050505',
-  },
-  summary: {
-    padding: 14,
-    marginBottom: 4,
-    borderRadius: 16,
-    gap: 4,
-    backgroundColor: 'rgba(0,230,118,0.12)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0,230,118,0.35)',
-  },
-  summaryTitle: {
-    color: COLORS.accent,
-    fontFamily: FONT.semibold,
-    fontSize: 14,
-  },
-  summaryLine: {
-    color: COLORS.textPrimary,
-    fontFamily: FONT.medium,
-    fontSize: 13,
   },
   // Deliberately quieter than the batch block above: that one is a result, this
   // is background. Same padding so the two stack as one column when both show.

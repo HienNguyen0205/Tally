@@ -227,7 +227,12 @@ export function ThresholdSlider({
       {...pan.panHandlers}
     >
       {showIcon && (
-        <Icon name="target" size={15} color={COLORS.textMuted} strokeWidth={1.5} />
+        <Icon
+          name="target"
+          size={15}
+          color={COLORS.textMuted}
+          strokeWidth={1.5}
+        />
       )}
 
       <View

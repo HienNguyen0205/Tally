@@ -34,7 +34,9 @@ describe("mapping into frame space - 'contain' (letterbox)", () => {
   });
 
   it('compensates for the black bars on both sides', () => {
-    expect(centerOf(toFrameBox(point(padX, 0.5), 'contain', W, H)).x).toBeCloseTo(0);
+    expect(
+      centerOf(toFrameBox(point(padX, 0.5), 'contain', W, H)).x,
+    ).toBeCloseTo(0);
     expect(
       centerOf(toFrameBox(point(1 - padX, 0.5), 'contain', W, H)).x,
     ).toBeCloseTo(1);
@@ -42,8 +44,12 @@ describe("mapping into frame space - 'contain' (letterbox)", () => {
 
   // The crux: 'cover' on its own used to cut the top and bottom off entirely.
   it('reaches all the way to the top and bottom of the frame', () => {
-    expect(centerOf(toFrameBox(point(0.5, 0), 'contain', W, H)).y).toBeCloseTo(0);
-    expect(centerOf(toFrameBox(point(0.5, 1), 'contain', W, H)).y).toBeCloseTo(1);
+    expect(centerOf(toFrameBox(point(0.5, 0), 'contain', W, H)).y).toBeCloseTo(
+      0,
+    );
+    expect(centerOf(toFrameBox(point(0.5, 1), 'contain', W, H)).y).toBeCloseTo(
+      1,
+    );
   });
 
   it('holds up in landscape', () => {
@@ -74,7 +80,9 @@ describe("mapping into frame space - 'cover' (centre crop)", () => {
   });
 
   it('keeps the square top inside the frame - the crop must be added back', () => {
-    expect(centerOf(toFrameBox(point(0.5, 0), 'cover', W, H)).y).toBeCloseTo(cropY);
+    expect(centerOf(toFrameBox(point(0.5, 0), 'cover', W, H)).y).toBeCloseTo(
+      cropY,
+    );
     expect(centerOf(toFrameBox(point(0.5, 1), 'cover', W, H)).y).toBeCloseTo(
       1 - cropY,
     );
@@ -146,8 +154,14 @@ describe('modelDestRect agrees with toFrameBox', () => {
             W,
             H,
           );
-          expect(pixelFromDest(dest, u, W, 'x')).toBeCloseTo(viaFrameBox.xmin * W, 4);
-          expect(pixelFromDest(dest, u, H, 'y')).toBeCloseTo(viaFrameBox.ymin * H, 4);
+          expect(pixelFromDest(dest, u, W, 'x')).toBeCloseTo(
+            viaFrameBox.xmin * W,
+            4,
+          );
+          expect(pixelFromDest(dest, u, H, 'y')).toBeCloseTo(
+            viaFrameBox.ymin * H,
+            4,
+          );
         }
       });
     }

@@ -20,11 +20,15 @@ const PATHS = {
       'M12 9.6 A2.4 2.4 0 1 0 12 14.4 A2.4 2.4 0 1 0 12 9.6',
   ),
   // Arrow into a tray - save to device
-  download: makePath('M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M7 10l5 5 5-5 M12 15V3'),
+  download: makePath(
+    'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M7 10l5 5 5-5 M12 15V3',
+  ),
   // Check mark - saved
   check: makePath('M20 6 L9 17 L4 12'),
   // Return arrow - retake
-  refresh: makePath('M23 4 L23 10 L17 10 M20.49 15 A9 9 0 1 1 18.37 5.64 L23 10'),
+  refresh: makePath(
+    'M23 4 L23 10 L17 10 M20.49 15 A9 9 0 1 1 18.37 5.64 L23 10',
+  ),
   // Picture frame with hills and sun - pick from the library
   image: makePath(
     'M3 5.5 A1.5 1.5 0 0 1 4.5 4 L19.5 4 A1.5 1.5 0 0 1 21 5.5 L21 18.5 ' +
@@ -50,7 +54,7 @@ const PATHS = {
     'M12 3.5 A8.5 8.5 0 1 0 12 20.5 A8.5 8.5 0 1 0 12 3.5 M12 8 L12 16 M8 12 L16 12',
   ),
   // Cross - dismiss a panel. Only for surfaces outside an RN Modal (currently
-  // DetailSheet); anything inside one draws blank on Android and takes
+  // FaceScanScreen); anything inside one draws blank on Android and takes
   // modalIcons' View-built CloseIcon instead, which mirrors this same shape.
   close: makePath('M6 6 L18 18 M18 6 L6 18'),
   // Open eye - password is showing

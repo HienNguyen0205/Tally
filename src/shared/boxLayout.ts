@@ -38,9 +38,7 @@ export function toFrameBox(
   frameH: number,
 ): NormalizedBox {
   const boxSize =
-    space === 'contain'
-      ? Math.max(frameW, frameH)
-      : Math.min(frameW, frameH);
+    space === 'contain' ? Math.max(frameW, frameH) : Math.min(frameW, frameH);
   const offX = (frameW - boxSize) / 2;
   const offY = (frameH - boxSize) / 2;
 
@@ -82,6 +80,29 @@ export function modelDestRect(
 }
 
 /**
+ * How the frame is fitted onto a drawing surface: the scale applied, and how
+ * much fell off each edge.
+ *
+ * Shared by everything that maps frame space onto the screen - boxes and the
+ * scan preview's 468 points alike. One copy, because two copies of a cover fit
+ * that drift apart put the mesh a few pixels off the face it belongs to, which
+ * looks like a broken model rather than a layout bug.
+ */
+export function frameFit(
+  frameW: number,
+  frameH: number,
+  screenW: number,
+  screenH: number,
+) {
+  const scale = Math.max(screenW / frameW, screenH / frameH);
+  return {
+    scale,
+    cropX: (screenW - frameW * scale) / 2,
+    cropY: (screenH - frameH * scale) / 2,
+  };
+}
+
+/**
  * Maps a box (already in frame space, see {@link toFrameBox}) onto the pixels of
  * a drawing surface - the screen or a snapshot.
  *
@@ -95,9 +116,7 @@ export function boxToScreen(
   screenW: number,
   screenH: number,
 ): ScreenRect {
-  const scale = Math.max(screenW / frameW, screenH / frameH);
-  const cropX = (screenW - frameW * scale) / 2;
-  const cropY = (screenH - frameH * scale) / 2;
+  const { scale, cropX, cropY } = frameFit(frameW, frameH, screenW, screenH);
 
   return {
     left: cropX + box.xmin * frameW * scale,

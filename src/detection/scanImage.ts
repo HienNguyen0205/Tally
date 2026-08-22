@@ -3,7 +3,7 @@ import type { TensorflowModel } from 'react-native-fast-tflite';
 
 import { MODEL_SIZE, NMS_IOU } from '../shared/constants';
 import { modelDestRect, toFrameBox, type ScanSpace } from '../shared/boxLayout';
-import { renderToInput } from './modelInput';
+import { renderToInput, UNIT_RANGE } from './modelInput';
 import { mergeDetections, type Detection } from '../shared/detections';
 import { parseDetections } from './runModel';
 
@@ -13,7 +13,7 @@ import { parseDetections } from './runModel';
  * Runs the same two passes and the same merge as the camera path - the resizer
  * only accepts a Frame, so the input has to be built with Skia here.
  *
- * Uses async `run` rather than `runSync`: this is the JS thread, and two 640²
+ * Uses async `run` rather than `runSync`: this is the JS thread, and two 640
  * inferences take long enough to block React from even painting the photo the
  * user just picked.
  */
@@ -32,6 +32,10 @@ export async function scanImage(
       whole,
       modelDestRect(w, h, space, MODEL_SIZE),
       MODEL_SIZE,
+      // NCHW: this detector's input is [1, 3, 640, 640]. The recognition
+      // models next door are NHWC - different export paths, see
+      // assets/models/README.md.
+      { layout: 'nchw', range: UNIT_RANGE },
     );
     if (input == null) return null;
 

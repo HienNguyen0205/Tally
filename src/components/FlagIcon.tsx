@@ -1,4 +1,12 @@
-import { Canvas, Fill, Group, Line, Path, Skia, vec } from '@shopify/react-native-skia';
+import {
+  Canvas,
+  Fill,
+  Group,
+  Line,
+  Path,
+  Skia,
+  vec,
+} from '@shopify/react-native-skia';
 
 import type { Locale } from '../i18n';
 
@@ -10,7 +18,12 @@ interface Props {
 }
 
 /** A 5-pointed star, point up, as an SVG path string. */
-function starPath(cx: number, cy: number, rOuter: number, rInner: number): string {
+function starPath(
+  cx: number,
+  cy: number,
+  rOuter: number,
+  rInner: number,
+): string {
   const points: string[] = [];
   for (let i = 0; i < 10; i++) {
     const r = i % 2 === 0 ? rOuter : rInner;
@@ -36,8 +49,9 @@ function starPath(cx: number, cy: number, rOuter: number, rInner: number): strin
  */
 export function FlagIcon({ locale, size }: Props) {
   const r = size / 2;
-  const clip = Skia.Path.Make();
-  clip.addCircle(r, r, r);
+  // Skia.Path.Circle, not Make().addCircle() - every mutating SkPath builder
+  // is deprecated in react-native-skia 2.11 and warns to the console.
+  const clip = Skia.Path.Circle(r, r, r);
 
   return (
     <Canvas style={{ width: size, height: size }}>

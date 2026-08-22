@@ -18,6 +18,8 @@ import { SegmentedTabs } from '../components/SegmentedTabs';
 import { ThresholdSlider } from '../components/ThresholdSlider';
 import { CloseIcon } from '../components/modalIcons';
 import { useDialog } from '../components/Dialog';
+import { ZoomSelector } from '../components/ZoomSelector';
+import { deleteEnrolment } from '../shared/faceProfiles';
 
 /**
  * Section label, and the sections themselves - plain tinted panels rather than
@@ -26,13 +28,7 @@ import { useDialog } from '../components/Dialog';
  * fares better is untested, so this mirrors HistorySheet's own already-proven
  * Modal-safe look (a flat translucent tint, no blur) instead of gambling on it.
  */
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: ReactNode;
-}) {
+function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>{title}</Text>
@@ -83,6 +79,16 @@ interface Props {
    *  the usual sign-out. */
   guest: boolean;
   onLeaveGuest: () => void;
+  /** Closes Settings and puts the enrolment overlay back up over the camera.
+   *  Enrolling needs the camera and the models, both of which belong to
+   *  DetectorScreen, so this screen asks rather than does. */
+  onReEnrol: () => void;
+  /** Camera zoom, moved here from the viewfinder. A live counter has nothing
+   *  to review, so the bottom of that screen is bare on purpose - and zoom is
+   *  something you set once for a room, not per shot. */
+  zoom: number;
+  zoomSteps: number[];
+  onZoom: (zoom: number) => void;
   onClose: () => void;
 }
 
@@ -97,6 +103,10 @@ export function SettingsScreen({
   onClearHistory,
   guest,
   onLeaveGuest,
+  onReEnrol,
+  zoom,
+  zoomSteps,
+  onZoom,
   onClose,
 }: Props) {
   const insets = useSafeAreaInsets();
@@ -120,13 +130,45 @@ export function SettingsScreen({
     });
   }, [historyCount, onClearHistory, show]);
 
+  const confirmDeleteFace = useCallback(() => {
+    show({
+      title: t('deleteFaceConfirmTitle'),
+      message: t('deleteFaceConfirmBody'),
+      actions: [
+        {
+          label: t('deleteFace'),
+          variant: 'destructive',
+          onPress: async () => {
+            const ok = await deleteEnrolment();
+            // Reported either way. A delete that silently did nothing looks
+            // exactly like a delete that worked, and this is the one action
+            // here with no visible consequence anywhere else in the app.
+            //
+            // A second show() from inside an action survives because Dialog
+            // dismisses BEFORE running onPress, and the await puts this call
+            // in a later tick - so it reopens rather than being closed.
+            show({
+              title: ok ? t('deleteFaceDone') : t('deleteFaceFailed'),
+              actions: [{ label: t('close'), variant: 'primary' }],
+            });
+          },
+        },
+        { label: t('cancelSelect'), variant: 'cancel' },
+      ],
+    });
+  }, [show]);
+
   const confirmSignOut = useCallback(() => {
     if (email == null) return;
     show({
       title: t('signOutConfirmTitle'),
       message: t('signOutConfirmBody', { email }),
       actions: [
-        { label: t('signOut'), variant: 'destructive', onPress: () => signOut() },
+        {
+          label: t('signOut'),
+          variant: 'destructive',
+          onPress: () => signOut(),
+        },
         { label: t('cancelSelect'), variant: 'cancel' },
       ],
     });
@@ -184,6 +226,10 @@ export function SettingsScreen({
               />
             </Row>
             <View style={styles.divider} />
+            <Row label={t('zoomLabel')} hint={t('zoomHint')} stacked>
+              <ZoomSelector steps={zoomSteps} value={zoom} onChange={onZoom} />
+            </Row>
+
             <Row
               label={t('defaultThresholdLabel')}
               hint={t('defaultThresholdHint')}
@@ -208,12 +254,40 @@ export function SettingsScreen({
               onPress={confirmClearHistory}
             >
               <Text
-                style={[styles.dangerText, historyCount === 0 && styles.mutedText]}
+                style={[
+                  styles.dangerText,
+                  historyCount === 0 && styles.mutedText,
+                ]}
               >
                 {t('clearHistory')}
               </Text>
             </Pressable>
           </Section>
+
+          {/* Guests have no row to scan into or delete - useFaceIdentity
+              never even runs for them. */}
+          {!guest && (
+            <Section title={t('faceSection')}>
+              <Text style={styles.rowHint}>{t('faceSectionHint')}</Text>
+              <Pressable
+                style={styles.cta}
+                accessibilityRole="button"
+                onPress={() => {
+                  onReEnrol();
+                  onClose();
+                }}
+              >
+                <Text style={styles.ctaText}>{t('reEnrolFace')}</Text>
+              </Pressable>
+              <Pressable
+                style={styles.danger}
+                accessibilityRole="button"
+                onPress={confirmDeleteFace}
+              >
+                <Text style={styles.dangerText}>{t('deleteFace')}</Text>
+              </Pressable>
+            </Section>
+          )}
 
           <Section title={t('authEyebrow')}>
             {guest ? (
@@ -233,7 +307,9 @@ export function SettingsScreen({
             ) : (
               <>
                 {email != null && (
-                  <Text style={styles.account}>{t('signedInAs', { email })}</Text>
+                  <Text style={styles.account}>
+                    {t('signedInAs', { email })}
+                  </Text>
                 )}
                 <Pressable
                   style={styles.danger}

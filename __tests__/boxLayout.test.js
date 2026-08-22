@@ -38,7 +38,12 @@ describe('mapping boxes onto screen coordinates', () => {
   it('preserves aspect: a square in frame space stays square on screen', () => {
     // Square in frame space means the normalised width must be smaller than the
     // height by exactly the frame's ratio.
-    const square = { xmin: 0.3, ymin: 0.3, xmax: 0.5, ymax: 0.3 + 0.2 * (FW / FH) };
+    const square = {
+      xmin: 0.3,
+      ymin: 0.3,
+      xmax: 0.5,
+      ymax: 0.3 + 0.2 * (FW / FH),
+    };
     const r = boxToScreen(square, FW, FH, SW, SH);
     expect(r.width).toBeCloseTo(r.height, 5);
   });

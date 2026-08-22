@@ -21,6 +21,7 @@
     "@react-native-community/blur": "^4.4.1",
     "@shopify/react-native-skia": "^2.11.0",
     "@supabase/supabase-js": "^2.112.3",
+    "axios": "^1.19.0",
     "base64-arraybuffer": "^1.0.2",
     "i18n-js": "^4.5.3",
     "react": "19.2.3",

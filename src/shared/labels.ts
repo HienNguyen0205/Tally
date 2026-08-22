@@ -2,7 +2,7 @@ import { t } from '../i18n';
 import { FACE_CLASS_ID } from './constants';
 
 /**
- * The detector's class names. One entry, because widerfaceyolo26 is a
+ * The detector's class names. One entry, because MediaPipe's face detector is a
  * single-class model (WIDER FACE): its output tensor carries 4 box
  * coordinates plus one score, not 80.
  *
